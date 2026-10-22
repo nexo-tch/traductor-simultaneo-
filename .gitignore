@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+# Grabaciones de reuniones reales: no se suben
+test-audio/*
+!test-audio/.gitkeep
+!test-audio/README.md
