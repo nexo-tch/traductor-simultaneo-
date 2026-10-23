@@ -32,7 +32,7 @@ Abre <http://localhost:5173> en Chrome, conecta los audífonos y pulsa **Empezar
 | **Voz traducida: encendida/apagada** | Corta la voz al instante; los subtítulos siguen. |
 | **Barra espaciadora** (mantener) | Silencia la voz mientras la mantienes presionada (fuera de campos de texto). |
 | **Volumen de la voz** | Volumen de la voz traducida. |
-| **Fuente → Audio de prueba** | Procesa un WAV/MP3 como si fuera el micrófono, para comparar con exactamente el mismo audio. |
+| **Fuente → Audio de prueba** | Procesa un WAV, MP3, OGG (notas de voz de WhatsApp) o M4A como si fuera el micrófono, para comparar con exactamente el mismo audio. |
 | **Vista** | Original + traducción, solo traducción o solo original. |
 | **Glosario** | Términos del negocio (ver más abajo). |
 | **Exportar JSON / CSV** | Descarga la sesión con textos, marcas de tiempo, latencias y aciertos del glosario. |

@@ -44,7 +44,7 @@ export async function archivoDePrueba(contexto: AudioContext, archivo: File, mon
   try {
     buffer = await contexto.decodeAudioData(await archivo.arrayBuffer());
   } catch {
-    throw new ErrorCaptura(`No se pudo leer «${archivo.name}». Usa un WAV o MP3.`, "archivo_invalido");
+    throw new ErrorCaptura(`No se pudo leer «${archivo.name}». Usa un WAV, MP3, OGG o M4A.`, "archivo_invalido");
   }
   const origen = contexto.createBufferSource();
   origen.buffer = buffer;
