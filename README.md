@@ -111,14 +111,18 @@ Tras cambiar el código de la extensión: `npm run build:extension` (o `npm run 
 
 Para que otros usen la extensión con tu API key, el servidor que guarda la key tiene que estar en internet. La key se escribe solo en el panel del servidor: nunca en el repositorio, en la extensión ni en el chat. Quien usa la extensión recibe tokens temporales de un solo uso.
 
-**1. Publicar el servidor en Render** (una vez):
+**1. Publicar el servidor en Railway** (una vez):
 
-1. Crea una cuenta en [render.com](https://render.com) entrando con GitHub, y dale acceso al repositorio `nexo-tch/traductor-simultaneo-`.
-2. **New → Blueprint**, elige el repositorio. Render lee `render.yaml`: servidor Node en Virginia (costa este de EE. UU.), plan Starter.
-3. Te pide dos valores secretos:
+1. Crea una cuenta en [railway.com](https://railway.com) entrando con GitHub.
+2. **New Project → Deploy from GitHub repo** y elige `nexo-tch/traductor-simultaneo-` (si no aparece, dale acceso a Railway en GitHub). Railway lee `railway.json`: construye con `npm run build` y arranca con `npm start`.
+3. En el servicio, pestaña **Variables**, agrega:
+   - `HOST` = `0.0.0.0`
    - `GEMINI_API_KEY`: tu key de Google AI Studio.
    - `CODIGO_ACCESO`: una clave larga que inventes (por ejemplo, 20 letras y números al azar). Es lo que les darás a tus colegas.
-4. Al terminar, Render muestra la dirección del servidor, algo como `https://traductor-simultaneo.onrender.com`. Ábrela con `/api/config` al final: debe responder con `"gemini": true`.
+4. Pestaña **Settings**:
+   - **Region**: la de la costa este de EE. UU. (Virginia), por la latencia desde Colombia (SPEC 9.1).
+   - **Networking → Generate Domain**: crea la dirección pública, algo como `https://traductor-simultaneo-production.up.railway.app`.
+5. Abre esa dirección con `/api/config` al final: debe responder con `"gemini": true`.
 
 Protecciones del servidor publicado (`server/acceso.ts`): sin `CODIGO_ACCESO` no arranca; pedir un token exige el código; máximo 20 pedidos por minuto por IP; solo la extensión puede llamarlo desde un navegador (CORS).
 
@@ -127,7 +131,7 @@ En Google AI Studio (o en la facturación de Google Cloud) ponle un **límite de
 **2. Construir la extensión con esa dirección:**
 
 ```bash
-VITE_SERVIDOR=https://traductor-simultaneo.onrender.com npm run zip:extension
+VITE_SERVIDOR=https://TU-DIRECCION.up.railway.app npm run zip:extension
 ```
 
 Crea `dist/traductor-extension.zip`, que ya apunta a tu servidor.
@@ -218,7 +222,7 @@ Desviaciones de `SPEC.md` y su motivo:
     - El panel lateral (`chrome.sidePanel`) cubre el panel de la Fase 3.
 
     Costos aceptados: suma el viaje del audio por Meet (~0,2–0,5 s), el audio llega mezclado (las entradas del panel se separan por idioma y pausas, no por persona) y cada oyente paga su propia sesión de Gemini. Para usarla en el Mac del usuario, la extensión pide los tokens al servidor local; para colegas habrá que desplegar ese servidor.
-19. **Servidor publicado con código de acceso** (no estaba en el SPEC para esta etapa). Para que colegas usen la API key del usuario sin verla, el mismo servidor se despliega en Render (`render.yaml`, región Virginia por SPEC 9.1). Se protege con un código compartido (`CODIGO_ACCESO`) y un límite por IP, en vez de inicio de sesión con Google: es lo más rápido para probar con pocas personas. Si se abre a más gente, conviene cambiarlo por inicio de sesión con cuentas de la empresa.
+19. **Servidor publicado con código de acceso** (no estaba en el SPEC para esta etapa). Para que colegas usen la API key del usuario sin verla, el mismo servidor se despliega en Railway (`railway.json`; región de la costa este por SPEC 9.1). Se protege con un código compartido (`CODIGO_ACCESO`) y un límite por IP, en vez de inicio de sesión con Google: es lo más rápido para probar con pocas personas. Si se abre a más gente, conviene cambiarlo por inicio de sesión con cuentas de la empresa.
 15. **El detector de voz se calibra con el ruido de fondo**: el umbral es el mayor entre la sensibilidad de *Ajustes* y el doble del ruido medido (percentil 20 de los últimos 6 s). Con la nota de WhatsApp, el umbral fijo quedaba al nivel del ruido y no se detectaba ninguna pausa.
 16. **Diagnóstico de la voz** en `eventos` del JSON: cuándo crece la traducción provisional (`traduccion_provisional`), qué texto va a la voz y cuándo (`a_la_voz#N`), cuándo empieza a sonar cada frase de voz y cuánto audio había en cola (`voz_primer_audio#N`) y cuándo termina (`voz_fin#N`).
 14. **Original de fondo con *ducking*** (SPEC 8.1), solo en el modo audio de prueba: el original suena al volumen de *Ajustes* (45% por defecto) y baja al 40% de ese valor (~18%) mientras suena la traducción, con transiciones de 60 ms. Así se oye como lo oiría quien escucha la interpretación. Con micrófono no aplica: quien habla oye su propia voz.
