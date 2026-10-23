@@ -61,6 +61,9 @@ details[open] { display: grid; gap: 8px; }
 summary { cursor: pointer; }
 details label { display: flex; align-items: center; gap: 8px; }
 details input[type="range"] { flex: 1; }
+.medidor { color: var(--tenue); font-size: 13px; }
+.medidor meter { flex: 1; height: 10px; }
+pre { margin: 0; max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: var(--superficie); border-radius: 6px; padding: 6px; }
 .avisos { display: grid; gap: 6px; padding: 0 14px; }
 .avisos:not(:empty) { padding-top: 8px; }
 .aviso { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--borde); background: var(--superficie); }

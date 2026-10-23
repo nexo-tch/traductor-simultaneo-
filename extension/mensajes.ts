@@ -41,7 +41,13 @@ export interface Foto {
   detalle?: string;
   retrasoMs: number;
   sonando: boolean;
+  /** Nivel del audio de la reunión (RMS 0–1), para ver si llega sonido. */
+  nivel: number;
+  /** Segundos desde que empezó la sesión. */
+  duracionS: number;
   entradas: Entrada[];
+  /** Líneas de diagnóstico (eventos de Google, estados, errores). En "cambios" solo las nuevas. */
+  diagnostico: string[];
 }
 
 export type AlFondo = { para: "fondo"; tipo: "iniciar" } | { para: "fondo"; tipo: "detener" };
@@ -54,7 +60,7 @@ export type AlDocumento =
   | { para: "documento"; tipo: "limpiar" };
 
 export type AlPanel =
-  | { para: "panel"; tipo: "cambios"; foto: Omit<Foto, "entradas">; entradas: Entrada[] }
+  | { para: "panel"; tipo: "cambios"; foto: Omit<Foto, "entradas" | "diagnostico">; entradas: Entrada[]; diagnostico: string[] }
   | { para: "panel"; tipo: "aviso"; nivel: "error" | "alerta"; texto: string }
   | { para: "panel"; tipo: "ajustes"; ajustes: Ajustes };
 

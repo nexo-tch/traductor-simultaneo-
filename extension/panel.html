@@ -35,6 +35,15 @@
         </label>
         <button id="btn-limpiar" type="button">Limpiar transcripción</button>
       </details>
+      <div class="fila medidor">
+        <span>Audio de la reunión</span>
+        <meter id="nivel" min="0" max="0.2" low="0.01" value="0"></meter>
+      </div>
+      <details id="diagnostico">
+        <summary>Diagnóstico</summary>
+        <button id="btn-copiar" type="button">Copiar diagnóstico</button>
+        <pre id="registro"></pre>
+      </details>
     </header>
     <div id="avisos" class="avisos" aria-live="polite"></div>
     <main id="contenedor">

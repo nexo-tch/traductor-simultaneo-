@@ -19,6 +19,8 @@ interface Sesion {
   voz: GainNode;
   proveedor: ProveedorGemini;
   salida?: DetectorActividad;
+  entrada: DetectorActividad;
+  inicio: number;
   tick: number;
 }
 
@@ -28,6 +30,17 @@ let transcripcion = new Transcripcion(ajustes.destino);
 let estado: EstadoConexion = "desconectado";
 let detalle: string | undefined;
 let sonando = false;
+/** Registro de diagnóstico: todo, y lo que falta mandar al panel. */
+const diagnostico: string[] = [];
+let diagnosticoNuevo: string[] = [];
+
+function anotar(texto: string): void {
+  const linea = `${new Date().toLocaleTimeString("es-CO")} ${texto}`;
+  console.info("[traductor]", linea);
+  diagnostico.push(linea);
+  if (diagnostico.length > 300) diagnostico.shift();
+  diagnosticoNuevo.push(linea);
+}
 
 chrome.runtime.onMessage.addListener((mensaje: AlDocumento, _remitente, responder) => {
   if (mensaje.para !== "documento") return;
@@ -35,7 +48,11 @@ chrome.runtime.onMessage.addListener((mensaje: AlDocumento, _remitente, responde
     case "iniciar":
       iniciar(mensaje.streamId, mensaje.ajustes).then(
         () => responder({}),
-        (error: unknown) => responder({ error: error instanceof Error ? error.message : String(error) }),
+        (error: unknown) => {
+          const texto = error instanceof Error ? error.message : String(error);
+          anotar(`No se pudo empezar: ${texto}`);
+          responder({ error: texto });
+        },
       );
       return true;
     case "detener":
@@ -46,7 +63,7 @@ chrome.runtime.onMessage.addListener((mensaje: AlDocumento, _remitente, responde
       aplicarVolumen();
       break;
     case "foto":
-      responder({ ...resumen(), entradas: transcripcion.entradas } satisfies Foto);
+      responder({ ...resumen(), entradas: transcripcion.entradas, diagnostico } satisfies Foto);
       return;
     case "limpiar":
       transcripcion = new Transcripcion(ajustes.destino);
@@ -59,6 +76,7 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
   detener();
   if (nuevos.destino !== ajustes.destino) transcripcion = new Transcripcion(nuevos.destino);
   ajustes = nuevos;
+  anotar(`Empezando: traducir a ${nuevos.destino}`);
   const flujo = await navigator.mediaDevices.getUserMedia({
     audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } } as MediaTrackConstraints,
     video: false,
@@ -70,8 +88,10 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
   const voz = contexto.createGain();
   voz.connect(contexto.destination);
 
+  anotar(`Pestaña capturada: ${flujo.getAudioTracks().length} pista(s) de audio`);
   const proveedor = new ProveedorGemini(SERVIDOR);
-  const actual: Sesion = { flujo, contexto, original, voz, proveedor, tick: 0 };
+  const entrada = new DetectorActividad(contexto, flujo, { umbral: 0.01, silencioMs: 500 }, () => {});
+  const actual: Sesion = { flujo, contexto, original, voz, proveedor, entrada, inicio: performance.now(), tick: 0 };
   sesion = actual;
   aplicarVolumen();
   for (const pista of flujo.getAudioTracks()) {
@@ -92,6 +112,8 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
 
 function manejar(actual: Sesion, evento: EventoProveedor): void {
   if (sesion !== actual) return;
+  if (evento.tipo === "diagnostico") anotar(`${evento.nombre}: ${evento.muestra.slice(0, 160)}`);
+  if (evento.tipo === "transcripcion_parcial" && !transcripcion.entradas.length) anotar(`Primer texto de Google (${evento.idioma ?? "?"}): ${evento.texto}`);
   switch (evento.tipo) {
     case "transcripcion_parcial":
       transcripcion.original(evento.texto, evento.idioma, evento.t);
@@ -108,11 +130,13 @@ function manejar(actual: Sesion, evento: EventoProveedor): void {
       });
       break;
     case "estado_conexion":
+      anotar(`Estado: ${evento.estado}${evento.detalle ? ` (${evento.detalle})` : ""}`);
       estado = evento.estado;
       detalle = evento.detalle;
       publicar();
       break;
     case "error":
+      anotar(`Error ${evento.codigo}: ${evento.mensaje}`);
       void enviar({ para: "panel", tipo: "aviso", nivel: "error", texto: evento.mensaje });
       break;
   }
@@ -133,6 +157,8 @@ function detener(): void {
   window.clearInterval(actual.tick);
   actual.proveedor.desconectar();
   actual.salida?.detener();
+  actual.entrada.detener();
+  anotar("Detenido");
   for (const pista of actual.flujo.getTracks()) pista.stop();
   void actual.contexto.close();
   sonando = false;
@@ -141,10 +167,20 @@ function detener(): void {
   publicar();
 }
 
-function resumen(): Omit<Foto, "entradas"> {
-  return { activo: sesion !== null, estado, detalle, retrasoMs: sesion?.proveedor.retrasoVoz() ?? 0, sonando };
+function resumen(): Omit<Foto, "entradas" | "diagnostico"> {
+  return {
+    activo: sesion !== null,
+    estado,
+    detalle,
+    retrasoMs: sesion?.proveedor.retrasoVoz() ?? 0,
+    sonando,
+    nivel: sesion?.entrada.nivel ?? 0,
+    duracionS: sesion ? (performance.now() - sesion.inicio) / 1000 : 0,
+  };
 }
 
 function publicar(): void {
-  void enviar({ para: "panel", tipo: "cambios", foto: resumen(), entradas: transcripcion.tomarCambios() });
+  const nuevas = diagnosticoNuevo;
+  diagnosticoNuevo = [];
+  void enviar({ para: "panel", tipo: "cambios", foto: resumen(), entradas: transcripcion.tomarCambios(), diagnostico: nuevas });
 }

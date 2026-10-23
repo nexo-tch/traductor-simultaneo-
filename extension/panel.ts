@@ -20,6 +20,9 @@ const ui = {
   contenedor: $("contenedor"),
   vacio: $("vacio"),
   lista: $<HTMLOListElement>("lista"),
+  nivel: $<HTMLMeterElement>("nivel"),
+  registro: $<HTMLPreElement>("registro"),
+  copiar: $<HTMLButtonElement>("btn-copiar"),
 };
 
 const TEXTO_ESTADO: Record<EstadoConexion, string> = {
@@ -79,8 +82,10 @@ ui.limpiar.addEventListener("click", async () => {
 
 // ---------- Estado y transcripción ----------
 
-function mostrarEstado(foto: Omit<Foto, "entradas">): void {
+function mostrarEstado(foto: Omit<Foto, "entradas" | "diagnostico">): void {
   activo = foto.activo;
+  ui.nivel.value = foto.nivel;
+  ui.nivel.title = `Nivel ${foto.nivel.toFixed(3)} · sesión de ${Math.round(foto.duracionS)} s`;
   ui.empezar.textContent = activo ? "Detener" : "Empezar";
   ui.empezar.dataset.activo = String(activo);
   ui.estado.dataset.estado = foto.estado;
@@ -91,6 +96,18 @@ function mostrarEstado(foto: Omit<Foto, "entradas">): void {
   if (foto.estado === "reconectando" && foto.detalle) avisar("alerta", foto.detalle, "conexion");
   if (foto.estado === "conectado") ui.avisos.querySelector('[data-clave="conexion"]')?.remove();
 }
+
+function mostrarDiagnostico(lineas: string[]): void {
+  if (!lineas.length) return;
+  ui.registro.textContent += lineas.join("\n") + "\n";
+  ui.registro.scrollTop = ui.registro.scrollHeight;
+}
+
+ui.copiar.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(ui.registro.textContent ?? "");
+  ui.copiar.textContent = "Copiado";
+  setTimeout(() => (ui.copiar.textContent = "Copiar diagnóstico"), 1500);
+});
 
 function cercaDelFinal(): boolean {
   const c = ui.contenedor;
@@ -146,6 +163,7 @@ chrome.runtime.onMessage.addListener((mensaje: AlPanel) => {
   if (mensaje.tipo === "cambios") {
     mostrarEstado(mensaje.foto);
     mostrarEntradas(mensaje.entradas);
+    mostrarDiagnostico(mensaje.diagnostico);
   } else if (mensaje.tipo === "aviso") {
     avisar(mensaje.nivel, mensaje.texto);
   } else if (mensaje.tipo === "ajustes") {
@@ -162,6 +180,7 @@ async function arrancar(): Promise<void> {
   if (foto?.entradas) {
     mostrarEstado(foto);
     mostrarEntradas(foto.entradas);
+    mostrarDiagnostico(foto.diagnostico);
   }
 }
 
