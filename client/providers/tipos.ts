@@ -83,4 +83,9 @@ export interface ProveedorTraduccion {
   desconectar(): void;
   /** Cambia los ajustes de voz en vivo (aplican desde la siguiente frase). Solo si el proveedor genera la voz aparte. */
   ajustarVoz?(ajustes: AjustesVoz): void;
+  /**
+   * Milisegundos de voz traducida esperando a sonar. Si el proveedor lo sabe (tiene
+   * su propia cola), es el retraso real; si no, la app lo estima con el registro.
+   */
+  retrasoVoz?(): number;
 }

@@ -287,10 +287,15 @@ function render(): void {
   panel.render(registro.fragmentos, glosario.activos(), origen, destino);
   ui.vacio.hidden = registro.fragmentos.some((f) => f.original || f.traduccion);
   const ahora = performance.now();
-  actualizarMedidor(sesion ? registro.retrasoAcumulado(ahora) : 0);
+  actualizarMedidor(sesion ? retrasoActual(sesion, ahora) : 0);
 }
 
 // ---------- Sesión ----------
+
+/** Retraso de la voz ahora: la cola real si el proveedor la conoce; si no, la estimación del registro. */
+function retrasoActual(s: Sesion, t: number): number {
+  return s.proveedor.retrasoVoz?.() ?? registro.retrasoAcumulado(t);
+}
 
 async function empezar(): Promise<void> {
   if (sesion || iniciando) return;
@@ -347,7 +352,7 @@ async function empezar(): Promise<void> {
   actual.tick = window.setInterval(() => {
     const t = performance.now();
     registro.tick(t);
-    const retraso = registro.retrasoAcumulado(t);
+    const retraso = retrasoActual(actual, t);
     retrasoMaximo = Math.max(retrasoMaximo, retraso);
     controlarRetraso(retraso);
     render();

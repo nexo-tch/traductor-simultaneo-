@@ -155,6 +155,10 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     this.ajustes = { ...ajustes };
   }
 
+  retrasoVoz(): number {
+    return (this.reproductor?.pendiente ?? 0) * 1000;
+  }
+
   desconectar(): void {
     this.activo = false;
     window.clearTimeout(this.temporizador);
