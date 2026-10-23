@@ -83,6 +83,9 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private saltoEn = 0;
   private vigilancia: number | undefined;
   private enPausa = false;
+  /** La primera frase de una sesión nueva llega sin espacio inicial: se agrega para no pegarla a la anterior. */
+  private separarEntrada = false;
+  private separarSalida = false;
   private previos: string[] = [];
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
@@ -155,6 +158,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
       if (!this.activo || this.sesion !== sesion) return;
 
       this.sesionLista = sesion;
+      this.separarEntrada = this.separarSalida = true;
       const acumulado = this.enEspera;
       this.enEspera = [];
       if (acumulado.length) this.emitir({ tipo: "diagnostico", nombre: "gemini_audio_en_espera", muestra: `${acumulado.length * PEDAZO_MS} ms enviados al abrir la sesión`, t: performance.now() });
@@ -365,10 +369,14 @@ export class ProveedorGemini implements ProveedorTraduccion {
         this.hayProvisional = false;
         this.emitir({ tipo: "transcripcion_provisional", texto: "", t });
       }
-      this.emitir({ tipo: "transcripcion_parcial", texto: contenido.inputTranscription.text, t });
+      const texto = contenido.inputTranscription.text;
+      this.emitir({ tipo: "transcripcion_parcial", texto: this.separarEntrada ? ` ${texto.trimStart()}` : texto, t });
+      this.separarEntrada = false;
     }
     if (contenido.outputTranscription?.text) {
-      this.emitir({ tipo: "traduccion_parcial", texto: contenido.outputTranscription.text, t });
+      const texto = contenido.outputTranscription.text;
+      this.emitir({ tipo: "traduccion_parcial", texto: this.separarSalida ? ` ${texto.trimStart()}` : texto, t });
+      this.separarSalida = false;
     }
   }
 
