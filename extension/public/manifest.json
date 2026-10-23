@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Traductor simultáneo para Meet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Traduce en vivo (español ↔ inglés) lo que se dice en la reunión: voz traducida y subtítulos en un panel lateral.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "tabCapture", "offscreen", "sidePanel", "storage"],

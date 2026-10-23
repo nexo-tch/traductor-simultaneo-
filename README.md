@@ -101,7 +101,7 @@ Una extensión de Chrome que traduce lo que se dice en la reunión y lo pone en 
    - **Traducir a**: tu idioma.
    - **Voz traducida**: encender o apagar. Atajo: `Alt+Shift+T`, funciona aunque estés en Meet.
    - **Volumen y vista**: volumen de la voz y de la reunión, y si la reunión baja mientras suena la traducción.
-5. **Detener** para terminar. Para volver a empezar, haz clic de nuevo en el ícono estando en la pestaña de Meet.
+5. **Detener** para terminar. **Empezar** traduce la pestaña que estás viendo junto al panel; cambiar *Traducir a* sigue con la misma pestaña. Si la pestaña no suena en 10 s, el panel avisa (puede estar en pausa o ser otra pestaña).
 
 Al capturar la pestaña, Chrome la silencia; la extensión vuelve a reproducir el audio de la reunión por su cuenta, más bajo mientras suena la traducción. Funciona con cualquier pestaña con audio (por ejemplo, un video en inglés de YouTube), útil para probarla sin reunión.
 

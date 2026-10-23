@@ -49,7 +49,7 @@ chrome.runtime.onMessage.addListener((mensaje: AlDocumento, _remitente, responde
   if (mensaje.para !== "documento") return;
   switch (mensaje.tipo) {
     case "iniciar":
-      iniciar(mensaje.streamId, mensaje.ajustes).then(
+      iniciar(mensaje.streamId, mensaje.ajustes, mensaje.titulo).then(
         () => responder({}),
         (error: unknown) => {
           const texto = error instanceof Error ? error.message : String(error);
@@ -75,7 +75,16 @@ chrome.runtime.onMessage.addListener((mensaje: AlDocumento, _remitente, responde
   responder({});
 });
 
-async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
+/** Si la pestaña no suena en este tiempo, se avisa: puede estar en pausa o ser otra pestaña. */
+const SIN_SONIDO_MS = 10000;
+let titulo = "";
+let ultimoSonido = 0;
+let avisadoSinSonido = false;
+
+async function iniciar(streamId: string, nuevos: Ajustes, tituloPestana: string): Promise<void> {
+  titulo = tituloPestana;
+  ultimoSonido = performance.now();
+  avisadoSinSonido = false;
   detener();
   if (nuevos.destino !== ajustes.destino) transcripcion = new Transcripcion(nuevos.destino);
   ajustes = nuevos;
@@ -92,7 +101,7 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
   const voz = contexto.createGain();
   voz.connect(contexto.destination);
 
-  anotar(`Pestaña capturada: ${flujo.getAudioTracks().length} pista(s) de audio`);
+  anotar(`Pestaña capturada: «${titulo}» (${flujo.getAudioTracks().length} pista(s) de audio)`);
   const proveedor = new ProveedorGemini(SERVIDOR);
   const entrada = new DetectorActividad(contexto, flujo, { umbral: 0.01, silencioMs: 500 }, () => {});
   const actual: Sesion = { flujo, contexto, original, voz, proveedor, entrada, inicio: performance.now(), tick: 0 };
@@ -195,8 +204,27 @@ function resumir(): void {
   );
 }
 
+function vigilarSonido(): void {
+  if (!sesion) return;
+  const t = performance.now();
+  if (sesion.entrada.nivel > 0.005) {
+    ultimoSonido = t;
+    avisadoSinSonido = false;
+  } else if (!avisadoSinSonido && t - ultimoSonido > SIN_SONIDO_MS) {
+    avisadoSinSonido = true;
+    anotar("La pestaña no suena hace 10 s");
+    void enviar({
+      para: "panel",
+      tipo: "aviso",
+      nivel: "alerta",
+      texto: `No llega sonido de la pestaña «${titulo}». ¿Está en pausa? Si quieres traducir otra pestaña, ve a ella y pulsa Detener y luego Empezar.`,
+    });
+  }
+}
+
 function publicar(): void {
   resumir();
+  vigilarSonido();
   const nuevas = diagnosticoNuevo;
   diagnosticoNuevo = [];
   void enviar({ para: "panel", tipo: "cambios", foto: resumen(), entradas: transcripcion.tomarCambios(), diagnostico: nuevas });

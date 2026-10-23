@@ -59,7 +59,7 @@ async function cambiar(parcial: Partial<Ajustes>): Promise<void> {
   await guardarAjustes(ajustes);
   await enviar({ para: "documento", tipo: "ajustes", ajustes });
   // El idioma de destino va en el token de Gemini: hay que abrir otra sesión.
-  if (activo && ajustes.destino !== destinoAntes) await enviar({ para: "fondo", tipo: "iniciar" });
+  if (activo && ajustes.destino !== destinoAntes) await enviar({ para: "fondo", tipo: "iniciar", misma: true });
 }
 
 ui.destino.addEventListener("change", () => void cambiar({ destino: ui.destino.value === "en" ? "en" : "es" }));

@@ -50,10 +50,11 @@ export interface Foto {
   diagnostico: string[];
 }
 
-export type AlFondo = { para: "fondo"; tipo: "iniciar" } | { para: "fondo"; tipo: "detener" };
+/** `misma`: volver a empezar en la pestaña que ya se traducía (cambio de idioma); si no, la pestaña visible. */
+export type AlFondo = { para: "fondo"; tipo: "iniciar"; misma?: boolean } | { para: "fondo"; tipo: "detener" };
 
 export type AlDocumento =
-  | { para: "documento"; tipo: "iniciar"; streamId: string; ajustes: Ajustes }
+  | { para: "documento"; tipo: "iniciar"; streamId: string; ajustes: Ajustes; titulo: string }
   | { para: "documento"; tipo: "detener" }
   | { para: "documento"; tipo: "ajustes"; ajustes: Ajustes }
   | { para: "documento"; tipo: "foto" }

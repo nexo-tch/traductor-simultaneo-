@@ -17,7 +17,7 @@ chrome.action.onClicked.addListener((pestana) => {
 chrome.runtime.onMessage.addListener((mensaje: AlFondo, _remitente, responder) => {
   if (mensaje.para !== "fondo") return;
   if (mensaje.tipo === "iniciar") {
-    void pestanaElegida().then((id) => (id === undefined ? avisarSinPestana() : iniciar(id))).then(() => responder({}));
+    void pestanaElegida(mensaje.misma === true).then((id) => (id === undefined ? avisarSinPestana() : iniciar(id))).then(() => responder({}));
     return true;
   }
   if (mensaje.tipo === "detener") void enviar({ para: "documento", tipo: "detener" }).then(() => responder({}));
@@ -33,10 +33,13 @@ chrome.commands.onCommand.addListener(async (comando) => {
   await enviar({ para: "panel", tipo: "ajustes", ajustes });
 });
 
-/** La pestaña donde se hizo clic en el ícono (o, si no hay, la activa de la ventana). */
-async function pestanaElegida(): Promise<number | undefined> {
+/**
+ * Al pulsar Empezar se traduce la pestaña que se está viendo junto al panel. Al cambiar
+ * de idioma se sigue con la que ya se traducía.
+ */
+async function pestanaElegida(misma: boolean): Promise<number | undefined> {
   const { pestana } = await chrome.storage.session.get("pestana");
-  if (typeof pestana === "number") {
+  if (misma && typeof pestana === "number") {
     const existe = await chrome.tabs.get(pestana).catch(() => undefined);
     if (existe) return pestana;
   }
@@ -56,7 +59,8 @@ async function iniciar(idPestana: number): Promise<void> {
     await enviar({ para: "documento", tipo: "detener" });
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: idPestana });
     const ajustes = await leerAjustes();
-    const respuesta = await enviar<{ error?: string }>({ para: "documento", tipo: "iniciar", streamId, ajustes });
+    const { title: titulo = "" } = await chrome.tabs.get(idPestana);
+    const respuesta = await enviar<{ error?: string }>({ para: "documento", tipo: "iniciar", streamId, ajustes, titulo });
     if (respuesta?.error) throw new Error(respuesta.error);
   } catch (error) {
     const texto = error instanceof Error ? error.message : String(error);
