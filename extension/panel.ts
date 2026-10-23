@@ -173,6 +173,7 @@ chrome.runtime.onMessage.addListener((mensaje: AlPanel) => {
 });
 
 async function arrancar(): Promise<void> {
+  $("version").textContent = `Versión ${chrome.runtime.getManifest().version}`;
   ajustes = await leerAjustes();
   mostrarAjustes(ajustes);
   // Si el panel se abre con una traducción en curso, se trae lo que ya hay.

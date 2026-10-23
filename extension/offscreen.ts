@@ -30,6 +30,9 @@ let transcripcion = new Transcripcion(ajustes.destino);
 let estado: EstadoConexion = "desconectado";
 let detalle: string | undefined;
 let sonando = false;
+/** Cuántos mensajes de cada tipo llegaron de Google, para el resumen periódico del diagnóstico. */
+let recibidos = { textos: 0, traducciones: 0 };
+let ultimoResumen = 0;
 /** Registro de diagnóstico: todo, y lo que falta mandar al panel. */
 const diagnostico: string[] = [];
 let diagnosticoNuevo: string[] = [];
@@ -77,6 +80,7 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
   if (nuevos.destino !== ajustes.destino) transcripcion = new Transcripcion(nuevos.destino);
   ajustes = nuevos;
   anotar(`Empezando: traducir a ${nuevos.destino}`);
+  recibidos = { textos: 0, traducciones: 0 };
   const flujo = await navigator.mediaDevices.getUserMedia({
     audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } } as MediaTrackConstraints,
     video: false,
@@ -112,6 +116,8 @@ async function iniciar(streamId: string, nuevos: Ajustes): Promise<void> {
 
 function manejar(actual: Sesion, evento: EventoProveedor): void {
   if (sesion !== actual) return;
+  if (evento.tipo === "transcripcion_parcial") recibidos.textos++;
+  if (evento.tipo === "traduccion_parcial") recibidos.traducciones++;
   if (evento.tipo === "diagnostico") anotar(`${evento.nombre}: ${evento.muestra.slice(0, 160)}`);
   if (evento.tipo === "transcripcion_parcial" && !transcripcion.entradas.length) anotar(`Primer texto de Google (${evento.idioma ?? "?"}): ${evento.texto}`);
   switch (evento.tipo) {
@@ -179,7 +185,18 @@ function resumen(): Omit<Foto, "entradas" | "diagnostico"> {
   };
 }
 
+/** Cada 5 s: si llega sonido de la pestaña y qué devolvió Google. */
+function resumir(): void {
+  const t = performance.now();
+  if (!sesion || t - ultimoResumen < 5000) return;
+  ultimoResumen = t;
+  anotar(
+    `Nivel del audio ${sesion.entrada.nivel.toFixed(3)} · de Google: ${recibidos.textos} textos del original, ${recibidos.traducciones} de traducción · retraso ${Math.round(sesion.proveedor.retrasoVoz())} ms`,
+  );
+}
+
 function publicar(): void {
+  resumir();
   const nuevas = diagnosticoNuevo;
   diagnosticoNuevo = [];
   void enviar({ para: "panel", tipo: "cambios", foto: resumen(), entradas: transcripcion.tomarCambios(), diagnostico: nuevas });
