@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false server/index.ts",
     "build": "vite build",
-    "start": "NODE_ENV=production tsx server/index.ts",
+    "start": "tsx server/index.ts --produccion",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -7,7 +7,7 @@ import express from "express";
 import { crearSecretoCliente, ErrorProveedor, esIdioma, type Idioma } from "./openai.js";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const produccion = process.env.NODE_ENV === "production";
+const produccion = process.argv.includes("--produccion") || process.env.NODE_ENV === "production";
 const puerto = Number(process.env.PORT) || 5173;
 
 const proveedor = process.env.PROVIDER || "openai";
