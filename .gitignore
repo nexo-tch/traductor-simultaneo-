@@ -8,3 +8,6 @@ dist/
 test-audio/*
 !test-audio/.gitkeep
 !test-audio/README.md
+
+# Paquetes de la extensión para compartir (se generan con npm run zip:extension)
+*.zip
