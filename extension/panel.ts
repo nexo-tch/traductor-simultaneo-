@@ -84,8 +84,10 @@ ui.limpiar.addEventListener("click", async () => {
 
 function mostrarEstado(foto: Omit<Foto, "entradas" | "diagnostico">): void {
   activo = foto.activo;
-  ui.nivel.value = foto.nivel;
-  ui.nivel.title = `Nivel ${foto.nivel.toFixed(3)} · sesión de ${Math.round(foto.duracionS)} s`;
+  // Un documento de una versión anterior no manda estos campos: sin el ?? 0 el medidor lanza y el panel no se actualiza.
+  const nivel = foto.nivel ?? 0;
+  ui.nivel.value = nivel;
+  ui.nivel.title = `Nivel ${nivel.toFixed(3)} · sesión de ${Math.round(foto.duracionS ?? 0)} s`;
   ui.empezar.textContent = activo ? "Detener" : "Empezar";
   ui.empezar.dataset.activo = String(activo);
   ui.estado.dataset.estado = foto.estado;
@@ -97,8 +99,8 @@ function mostrarEstado(foto: Omit<Foto, "entradas" | "diagnostico">): void {
   if (foto.estado === "conectado") ui.avisos.querySelector('[data-clave="conexion"]')?.remove();
 }
 
-function mostrarDiagnostico(lineas: string[]): void {
-  if (!lineas.length) return;
+function mostrarDiagnostico(lineas: string[] | undefined): void {
+  if (!lineas?.length) return;
   ui.registro.textContent += lineas.join("\n") + "\n";
   ui.registro.scrollTop = ui.registro.scrollHeight;
 }
