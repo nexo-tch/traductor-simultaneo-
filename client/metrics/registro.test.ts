@@ -131,4 +131,25 @@ describe("RegistroSesion", () => {
     expect(f.original).toBe("Hola a todos");
     expect(f.originalProvisional).toBe("");
   });
+
+  it("voz continua: la cola se mide en la última intervención cuya traducción quedó en la primera", () => {
+    const r = registro();
+    r.vozLocal(true, 0);
+    r.textoOriginal("Primera parte", 1000);
+    r.audioSalida(true, 1300);
+    r.textoTraducido("First part", 1200);
+    r.vozLocal(false, 5000);
+    r.vozLocal(true, 7000); // pausa larga: segunda intervención
+    r.textoOriginal("segunda parte.", 7500);
+    r.textoTraducido(" and second part.", 9200); // llega mientras la voz sigue sonando
+    r.vozLocal(false, 9000);
+    r.audioSalida(false, 11000);
+    avanzar(r, 5000, 13000);
+
+    const [a, b] = r.fragmentos;
+    expect(a.traduccion).toBe("First part and second part.");
+    expect(b.traduccionEn).toBe(1);
+    expect(latencias(a).cola).toBeUndefined();
+    expect(latencias(b).cola).toBe(2000);
+  });
 });

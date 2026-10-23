@@ -16,6 +16,8 @@ const MAX_REINTENTOS = 5;
 const DESCARTAR_DESDE_S = 8;
 /** Un hueco de voz más largo que esto cuenta como "la voz retoma" en el diagnóstico. */
 const HUECO_MS = 600;
+/** Audio que se guarda mientras Google abre la sesión, para no perder el comienzo (máximo 10 s). */
+const MAX_PEDAZOS_EN_ESPERA = 100;
 
 interface RespuestaSesion {
   token: string;
@@ -49,6 +51,9 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private temporizador: number | undefined;
   private sesion: Session | null = null;
   private captura: CapturaPcm | null = null;
+  /** Sesión que ya confirmó la configuración; mientras sea null, el audio se acumula en espera. */
+  private sesionLista: Session | null = null;
+  private enEspera: string[] = [];
   private reproductor: ReproductorPcm | null = null;
   private campos = new Set<string>();
   private ultimoAudio = 0;
@@ -70,7 +75,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
   desconectar(): void {
     this.activo = false;
     window.clearTimeout(this.temporizador);
-    this.cerrarConexion();
+    this.cerrarConexion(true);
     this.reproductor?.cerrar();
     this.reproductor = null;
     this.emitirEstado("desconectado");
@@ -85,6 +90,11 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private async abrir(): Promise<void> {
     if (!this.opciones) return;
     try {
+      // La captura arranca antes de abrir la sesión: lo que se diga mientras Google confirma
+      // (unos 2 s) queda en espera y se manda apenas la sesión esté lista.
+      if (!this.captura) {
+        this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => this.enviar(aBase64(new Uint8Array(pcm.buffer))));
+      }
       const { token, modelo } = await this.pedirSesion(this.opciones.idiomaDestino);
       if (!this.activo) return;
       const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: "v1alpha" } });
@@ -118,12 +128,11 @@ export class ProveedorGemini implements ProveedorTraduccion {
       await Promise.race([configurada, new Promise((_, falla) => setTimeout(() => falla(new Error("Google no confirmó la sesión")), 10000))]);
       if (!this.activo || this.sesion !== sesion) return;
 
-      this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => {
-        if (this.sesion !== sesion) return;
-        sesion.sendRealtimeInput({
-          audio: { data: aBase64(new Uint8Array(pcm.buffer)), mimeType: `audio/pcm;rate=${FRECUENCIA_ENTRADA}` },
-        });
-      });
+      this.sesionLista = sesion;
+      const acumulado = this.enEspera;
+      this.enEspera = [];
+      if (acumulado.length) this.emitir({ tipo: "diagnostico", nombre: "gemini_audio_en_espera", muestra: `${acumulado.length * PEDAZO_MS} ms enviados al abrir la sesión`, t: performance.now() });
+      for (const datos of acumulado) this.enviar(datos);
       this.reintentos = 0;
       this.emitirEstado("conectado");
     } catch (error) {
@@ -151,9 +160,24 @@ export class ProveedorGemini implements ProveedorTraduccion {
     return cuerpo as RespuestaSesion;
   }
 
-  private cerrarConexion(): void {
-    this.captura?.detener();
-    this.captura = null;
+  private enviar(datos: string): void {
+    const sesion = this.sesionLista;
+    if (!sesion || sesion !== this.sesion) {
+      this.enEspera.push(datos);
+      if (this.enEspera.length > MAX_PEDAZOS_EN_ESPERA) this.enEspera.shift();
+      return;
+    }
+    sesion.sendRealtimeInput({ audio: { data: datos, mimeType: `audio/pcm;rate=${FRECUENCIA_ENTRADA}` } });
+  }
+
+  /** Cierra la conexión con Google. La captura sigue (y acumula) salvo que se pida detenerla. */
+  private cerrarConexion(detenerCaptura = false): void {
+    if (detenerCaptura) {
+      this.captura?.detener();
+      this.captura = null;
+      this.enEspera = [];
+    }
+    this.sesionLista = null;
     const sesion = this.sesion;
     this.sesion = null;
     try {
@@ -177,7 +201,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
     this.emitir({ tipo: "error", codigo: e.codigo, mensaje: e.message, recuperable: false, t: performance.now() });
     this.emitirEstado("error", e.message);
     this.activo = false;
-    this.cerrarConexion();
+    this.cerrarConexion(true);
   }
 
   private programarReconexion(motivo: string): void {

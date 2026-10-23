@@ -71,6 +71,13 @@ export interface Fragmento {
   cierreEn?: number;
   /** Momento en que la persona volvió a hablar (si interrumpió la cola). */
   t_reinicio_habla?: number;
+  /**
+   * Id de la intervención cuya traducción incluye la de esta: la voz traducida siguió
+   * sin pausa (proveedores de voz continua, como Gemini) y el texto quedó allá.
+   */
+  traduccionEn?: number;
+  /** Esta traducción incluye la de intervenciones siguientes: su cola se mide en la última. */
+  incluyeSiguientes: boolean;
 }
 
 export interface Latencias {
@@ -88,7 +95,7 @@ export function latencias(f: Fragmento): Latencias {
   if (f.arranqueLimpio && f.t_primer_audio_traducido !== undefined && f.t_inicio_habla !== undefined) {
     resultado.arranque = f.t_primer_audio_traducido - f.t_inicio_habla;
   }
-  if (f.corteForzado || f.t_fin_habla === undefined || !f.traduccionFinal) return resultado;
+  if (f.corteForzado || f.incluyeSiguientes || f.t_fin_habla === undefined || !f.traduccionFinal) return resultado;
   if (f.colaInterrumpida && f.t_reinicio_habla !== undefined) {
     resultado.cola = f.t_reinicio_habla - f.t_fin_habla;
   } else if (f.t_fin_audio_traducido !== undefined && f.t_fin_audio_traducido >= f.t_fin_habla) {
@@ -291,6 +298,7 @@ export class RegistroSesion {
       corteForzado: false,
       colaInterrumpida: false,
       arranqueLimpio: false,
+      incluyeSiguientes: false,
       hora: this.relojPared(),
       t_inicio_habla: this.inicioVoz ?? t,
     };
@@ -322,5 +330,30 @@ export class RegistroSesion {
     if (f.t_primer_audio_traducido !== undefined && this.ultimoSonido !== undefined) {
       f.t_fin_audio_traducido = Math.max(this.ultimoSonido, f.t_primer_audio_traducido);
     }
+    this.unirSiguientes(f);
+  }
+
+  /**
+   * Si llegó traducción a esta intervención después de que terminaran de hablarse las
+   * siguientes, ese texto era de ellas (la voz siguió sin pausa). Se marcan como
+   * traducidas aquí y la cola se mide en la última, contra el fin del audio.
+   */
+  private unirSiguientes(f: Fragmento): void {
+    const ultimoTexto = f.t_texto_traducido_final;
+    if (ultimoTexto === undefined) return;
+    const unidas = this.fragmentos.filter(
+      (g) => g.id > f.id && g.originalFinal && !g.traduccionFinal && !g.traduccion && g.t_fin_habla !== undefined && g.t_fin_habla < ultimoTexto,
+    );
+    if (!unidas.length) return;
+    f.incluyeSiguientes = true;
+    for (const g of unidas) {
+      g.traduccionEn = f.id;
+      g.traduccionFinal = true;
+      g.traduccionProvisional = "";
+    }
+    const ultima = unidas.at(-1)!;
+    if (f.t_fin_audio_traducido !== undefined) ultima.t_fin_audio_traducido = f.t_fin_audio_traducido;
+    // Las intermedias no tienen cola propia: la persona siguió hablando.
+    for (const g of unidas.slice(0, -1)) g.corteForzado = true;
   }
 }

@@ -60,7 +60,8 @@ export class PanelBilingue {
     let cambio = false;
     for (const f of fragmentos) {
       if (!f.original && !f.traduccion && !f.originalProvisional && !f.traduccionProvisional) continue;
-      const traduccion = aplicarGlosario(f.traduccion, glosario);
+      // Con voz continua, la traducción de esta intervención quedó en una anterior.
+      const traduccion = f.traduccionEn !== undefined && !f.traduccion ? `(va en la traducción de arriba, #${f.traduccionEn})` : aplicarGlosario(f.traduccion, glosario);
       const traduccionProvisional = aplicarGlosario(f.traduccionProvisional, glosario);
       const l = latencias(f);
       const firma = [

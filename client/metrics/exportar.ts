@@ -94,6 +94,7 @@ export function aJSON(datos: DatosSesion): string {
       cola_ms: redondo(l.cola),
       cola_interrumpida: f.colaInterrumpida,
       corte_forzado: f.corteForzado,
+      traduccion_en: f.traduccionEn ?? null,
       arranque_ms: redondo(l.arranque),
       marcas_ms: relativos(f, datos.t0),
       glosario: evaluarGlosario(f.original, f.traduccion, datos.glosario),
