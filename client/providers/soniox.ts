@@ -40,7 +40,7 @@ const CIERRE_FRASE_MS = 1000;
  * Si la cola sin confirmar no cambia en este tiempo, la persona se calló: se
  * pide a Soniox que la confirme. Es más largo que las micro-pausas al hablar.
  */
-const CONFIRMAR_TRAS_MS = 900;
+const CONFIRMAR_TRAS_MS = 1600;
 /** Punto (o exclamación) al final de un pedazo de texto. La "?" se respeta siempre. */
 const PUNTO_FINAL = /[.!…](["')\]]*)\s*$/;
 /** En modo "frase", se manda a la voz al llegar a una pausa natural o a este número de palabras. */
@@ -57,6 +57,10 @@ interface RespuestaSesion {
 
 /** Una frase de voz: su stream de TTS y el audio que llegó antes de que le tocara sonar. */
 interface Tramo {
+  id: number;
+  /** Para diagnóstico: cuándo se mandó el primer texto y si ya llegó audio. */
+  primerTexto?: number;
+  conAudio: boolean;
   stream: RealtimeTtsStream;
   pendiente: Uint8Array[];
   terminado: boolean;
@@ -140,6 +144,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   private puntoPendiente = false;
   private colaVigilada = "";
   private readonly anticipador = new Anticipador();
+  private siguienteTramo = 1;
+  private palabrasProvisionales = 0;
   private esperaConfirmar: number | undefined;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
@@ -369,6 +375,11 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     } else if (traduccion) {
       this.hablar(traduccion);
     }
+    const palabrasProv = provisionalTraduccion.trim() ? provisionalTraduccion.trim().split(/\s+/).length : 0;
+    if (palabrasProv > this.palabrasProvisionales) {
+      this.emitir({ tipo: "diagnostico", nombre: "traduccion_provisional", muestra: provisionalTraduccion, t });
+    }
+    this.palabrasProvisionales = palabrasProv;
     if (provisionalTraduccion !== this.provisionalTraduccion) {
       this.provisionalTraduccion = provisionalTraduccion;
       this.emitir({ tipo: "traduccion_provisional", texto: provisionalTraduccion, t });
@@ -424,14 +435,22 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       .then(async () => {
         if (!this.tts || !this.activo || !envio.trim()) return;
         if (!this.abierto || this.abierto.stream.state !== "active") this.abierto = await this.abrirTramo();
+        this.abierto.primerTexto ??= performance.now();
         this.abierto.stream.sendText(envio);
+        this.emitir({ tipo: "diagnostico", nombre: `a_la_voz#${this.abierto.id}`, muestra: envio, t: performance.now() });
       })
       .catch((error) => this.emitir({ tipo: "error", codigo: "voz", mensaje: `Voz de Soniox: ${error instanceof Error ? error.message : error}`, recuperable: true, t: performance.now() }));
   }
 
   private cerrarFrase(): void {
-    this.soltarPorDecir();
     window.clearTimeout(this.cierreFrase);
+    // Si Soniox tiene habla sin confirmar, la persona sigue hablando y viene más texto:
+    // cerrar ahora obligaría a abrir otra frase de voz, que tarda en arrancar (pausa audible).
+    if (this.provisionalOriginal.trim() && this.activo) {
+      this.cierreFrase = window.setTimeout(() => this.cerrarFrase(), CIERRE_FRASE_MS);
+      return;
+    }
+    this.soltarPorDecir();
     // No llegó más texto: el punto era real y la frase termina.
     const punto = this.puntoPendiente;
     this.puntoPendiente = false;
@@ -457,13 +476,22 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       reduce_silence: ajustes?.reducirSilencios ?? false,
       voice: ajustes?.voz || this.vozServidor,
     });
-    const tramo: Tramo = { stream, pendiente: [], terminado: false };
+    const tramo: Tramo = { id: this.siguienteTramo++, stream, pendiente: [], terminado: false, conAudio: false };
     this.tramos.push(tramo);
     stream.on("audio", (bytes) => {
+      if (!tramo.conAudio) {
+        tramo.conAudio = true;
+        const t = performance.now();
+        const espera = tramo.primerTexto === undefined ? "" : ` (${Math.round(t - tramo.primerTexto)} ms después del primer texto)`;
+        this.emitir({ tipo: "diagnostico", nombre: `voz_primer_audio#${tramo.id}`, muestra: `en cola: ${(this.reproductor?.pendiente ?? 0).toFixed(1)} s${espera}`, t });
+      }
       if (this.tramos[0] === tramo) this.sonar(bytes);
       else tramo.pendiente.push(bytes);
     });
     const terminar = () => {
+      if (!tramo.terminado) {
+        this.emitir({ tipo: "diagnostico", nombre: `voz_fin#${tramo.id}`, muestra: `en cola: ${(this.reproductor?.pendiente ?? 0).toFixed(1)} s`, t: performance.now() });
+      }
       tramo.terminado = true;
       this.avanzar();
     };

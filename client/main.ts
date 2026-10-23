@@ -337,7 +337,7 @@ async function empezar(): Promise<void> {
   const entrada = new DetectorActividad(
     contexto,
     fuente.flujo,
-    { umbral: Number(ui.umbral.value), silencioMs: Number(ui.silencio.value) },
+    { umbral: Number(ui.umbral.value), silencioMs: Number(ui.silencio.value), autoCalibrar: true },
     (activa, t) => registro.vozLocal(activa, t),
   );
   const actual: Sesion = { proveedor, fuente, contexto, entrada, tick: 0 };
