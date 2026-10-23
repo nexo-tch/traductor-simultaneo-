@@ -13,6 +13,22 @@ interface Nodos {
   firma: string;
 }
 
+/**
+ * Texto confirmado + cola provisional en gris. Si el proveedor no confirma
+ * palabra por palabra, todo el párrafo va en gris hasta cerrarse.
+ */
+function escribir(parrafo: HTMLParagraphElement, confirmado: string, provisional: string, todoParcial: boolean): void {
+  parrafo.classList.toggle("parcial", todoParcial);
+  if (!confirmado && !provisional) {
+    parrafo.textContent = "…";
+    return;
+  }
+  const cola = document.createElement("span");
+  cola.className = "parcial";
+  cola.textContent = provisional;
+  parrafo.replaceChildren(confirmado, cola);
+}
+
 const formatoHora = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export class PanelBilingue {
@@ -43,10 +59,22 @@ export class PanelBilingue {
   render(fragmentos: Fragmento[], glosario: TerminoGlosario[], origen: Idioma, destino: Idioma): void {
     let cambio = false;
     for (const f of fragmentos) {
-      if (!f.original && !f.traduccion) continue;
+      if (!f.original && !f.traduccion && !f.originalProvisional && !f.traduccionProvisional) continue;
       const traduccion = aplicarGlosario(f.traduccion, glosario);
+      const traduccionProvisional = aplicarGlosario(f.traduccionProvisional, glosario);
       const l = latencias(f);
-      const firma = [f.hablante, f.original, traduccion, f.originalFinal, f.traduccionFinal, l.cola, l.arranque, origen].join("|");
+      const firma = [
+        f.hablante,
+        f.original,
+        f.originalProvisional,
+        traduccion,
+        traduccionProvisional,
+        f.originalFinal,
+        f.traduccionFinal,
+        l.cola,
+        l.arranque,
+        origen,
+      ].join("|");
       let n = this.nodos.get(f.id);
       if (n && n.firma === firma) continue;
       if (!n) {
@@ -58,12 +86,10 @@ export class PanelBilingue {
       cambio = true;
 
       n.hablante.textContent = f.hablante;
-      n.original.textContent = f.original || "…";
+      escribir(n.original, f.original, f.originalProvisional, !f.originalFinal && !f.porPalabra);
       n.original.lang = origen;
-      n.original.classList.toggle("parcial", !f.originalFinal);
-      n.traduccion.textContent = traduccion || "…";
+      escribir(n.traduccion, traduccion, traduccionProvisional, !f.traduccionFinal && !f.porPalabra);
       n.traduccion.lang = destino;
-      n.traduccion.classList.toggle("parcial", !f.traduccionFinal);
       n.latencia.textContent =
         l.cola === undefined ? "" : `${f.colaInterrumpida ? "≥ " : ""}${formatoSegundos(l.cola, true)}`;
       n.latencia.title = [

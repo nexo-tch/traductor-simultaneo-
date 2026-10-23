@@ -5,17 +5,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { crearSecretoCliente, ErrorProveedor, esIdioma, type Idioma } from "./openai.js";
+import { crearSesionSoniox } from "./soniox.js";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const produccion = process.argv.includes("--produccion") || process.env.NODE_ENV === "production";
 const puerto = Number(process.env.PORT) || 5173;
 
-const proveedor = process.env.PROVIDER || "openai";
+const proveedorPorDefecto = process.env.PROVIDER || "openai";
 const idiomaOrigen: Idioma = esIdioma(process.env.SOURCE_LANG) ? process.env.SOURCE_LANG : "es";
 const idiomaDestino: Idioma = esIdioma(process.env.TARGET_LANG) ? process.env.TARGET_LANG : "en";
 
-function apiKey(): string {
-  return (process.env.OPENAI_API_KEY ?? "").trim();
+/** Variable de entorno con la key de cada proveedor. Se leen en cada pedido, nunca se envían al navegador. */
+const KEYS: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY" };
+
+function apiKey(proveedor: string): string {
+  return (process.env[KEYS[proveedor]] ?? "").trim();
 }
 
 const app = express();
@@ -24,36 +28,46 @@ app.use(express.json({ limit: "16kb" }));
 
 app.get("/api/config", (_req, res) => {
   res.json({
-    proveedor,
+    proveedor: proveedorPorDefecto,
     idiomaOrigen,
     idiomaDestino,
-    apiKeyConfigurada: apiKey().length > 0,
+    keys: Object.fromEntries(Object.keys(KEYS).map((p) => [p, apiKey(p).length > 0])),
   });
 });
 
 app.post("/api/sesion", async (req, res) => {
+  const proveedor: unknown = req.body?.proveedor ?? "openai";
   const destino: unknown = req.body?.idiomaDestino;
+  if (typeof proveedor !== "string" || !KEYS[proveedor]) {
+    res.status(400).json({ codigo: "proveedor_invalido", mensaje: "Proveedor desconocido." });
+    return;
+  }
   if (!esIdioma(destino)) {
     res.status(400).json({ codigo: "idioma_invalido", mensaje: "Idioma de destino no soportado (usa es o en)." });
     return;
   }
-  if (!apiKey()) {
+  const key = apiKey(proveedor);
+  if (!key) {
     res.status(500).json({
       codigo: "sin_key",
-      mensaje: "Falta la API key. Copia .env.example a .env, pon tu OPENAI_API_KEY y reinicia el servidor.",
+      mensaje: `Falta la API key. Abre el archivo .env, pon tu ${KEYS[proveedor]} y reinicia el servidor.`,
     });
     return;
   }
 
   try {
-    res.json(await crearSecretoCliente(apiKey(), destino));
+    res.json(
+      proveedor === "soniox"
+        ? await crearSesionSoniox(key, destino, process.env.SONIOX_VOICE?.trim())
+        : await crearSecretoCliente(key, destino),
+    );
   } catch (error) {
     if (error instanceof ErrorProveedor) {
-      console.warn(`[sesion] ${error.codigo} (${error.estadoHttp})`);
+      console.warn(`[sesion:${proveedor}] ${error.codigo} (${error.estadoHttp})`);
       res.status(error.estadoHttp).json({ codigo: error.codigo, mensaje: error.message });
       return;
     }
-    console.error("[sesion] error inesperado", error instanceof Error ? error.message : error);
+    console.error(`[sesion:${proveedor}] error inesperado`, error instanceof Error ? error.message : error);
     res.status(500).json({ codigo: "error_servidor", mensaje: "Error inesperado en el servidor local." });
   }
 });
@@ -73,7 +87,6 @@ if (produccion) {
 
 app.listen(puerto, "127.0.0.1", () => {
   console.log(`Probador de fluidez en http://localhost:${puerto}`);
-  if (!apiKey()) {
-    console.log("Aviso: falta OPENAI_API_KEY en .env. La página lo mostrará hasta que la configures.");
-  }
+  const faltan = Object.entries(KEYS).filter(([p]) => !apiKey(p)).map(([, v]) => v);
+  if (faltan.length) console.log(`Aviso: falta ${faltan.join(" y ")} en .env (ese proveedor no estará disponible).`);
 });

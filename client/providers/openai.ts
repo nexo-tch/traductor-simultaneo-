@@ -25,7 +25,12 @@ class ErrorConexion extends Error {
 export class ProveedorOpenAI implements ProveedorTraduccion {
   readonly id = "openai";
   readonly nombre = "OpenAI gpt-realtime-translate";
-  readonly capacidades = { glosario: false, vozEnVivo: true };
+  readonly capacidades = {
+    glosario: false,
+    vozEnVivo: true,
+    notaGlosario:
+      "OpenAI no acepta glosario: aquí se usa para corregir los subtítulos y medir cuántos términos traduce bien. La voz no se corrige.",
+  };
 
   private pc: RTCPeerConnection | null = null;
   private opciones: OpcionesConexion | null = null;
@@ -84,7 +89,7 @@ export class ProveedorOpenAI implements ProveedorTraduccion {
       respuesta = await fetch("/api/sesion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idiomaDestino }),
+        body: JSON.stringify({ proveedor: "openai", idiomaDestino }),
       });
     } catch {
       throw new ErrorConexion(

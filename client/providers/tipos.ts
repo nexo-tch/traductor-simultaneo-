@@ -17,6 +17,12 @@ export type EventoProveedor =
   | { tipo: "transcripcion_final"; texto: string; t: number; idFragmento: string }
   | { tipo: "traduccion_parcial"; texto: string; t: number; idFragmento?: string }
   | { tipo: "traduccion_final"; texto: string; t: number; idFragmento: string }
+  /**
+   * Cola de texto aún sin confirmar (el proveedor puede corregirla). Reemplaza
+   * a la anterior; vacío = no hay nada pendiente. Se muestra en gris.
+   */
+  | { tipo: "transcripcion_provisional"; texto: string; t: number }
+  | { tipo: "traduccion_provisional"; texto: string; t: number }
   | { tipo: "audio_traducido"; pista: MediaStream; t: number }
   | { tipo: "estado_conexion"; estado: EstadoConexion; detalle?: string; t: number }
   | { tipo: "error"; codigo: string; mensaje: string; recuperable: boolean; t: number }
@@ -35,6 +41,8 @@ export interface CapacidadesProveedor {
   glosario: boolean;
   /** La voz llega como pista en vivo (sin cola controlable: no se puede acelerar). */
   vozEnVivo: boolean;
+  /** Texto que explica en la interfaz qué hace el glosario con este proveedor. */
+  notaGlosario: string;
 }
 
 export interface ProveedorTraduccion {

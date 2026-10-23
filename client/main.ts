@@ -35,6 +35,8 @@ const ui = {
   avisos: $("avisos"),
   vacio: $("vacio"),
   nombreProveedor: $("nombre-proveedor"),
+  notaGlosario: $("nota-glosario"),
+  notaVoz: $("nota-voz"),
   hablante: $<HTMLInputElement>("aj-hablante"),
   umbral: $<HTMLInputElement>("aj-umbral"),
   umbralValor: $<HTMLOutputElement>("aj-umbral-valor"),
@@ -274,6 +276,12 @@ function manejarEvento(actual: Sesion, evento: EventoProveedor): void {
     case "traduccion_final":
       registro.textoTraducido(evento.texto, evento.t);
       break;
+    case "transcripcion_provisional":
+      registro.textoOriginalProvisional(evento.texto, evento.t);
+      break;
+    case "traduccion_provisional":
+      registro.textoTraducidoProvisional(evento.texto, evento.t);
+      break;
     case "audio_traducido":
       voz.conectar(evento.pista);
       actual.salida?.detener();
@@ -439,6 +447,34 @@ for (const [id, { nombre }] of Object.entries(PROVEEDORES)) {
   ui.proveedor.add(new Option(nombre, id));
 }
 
+const VARIABLE_KEY: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY" };
+let keys: Record<string, boolean> = {};
+
+/** Ajusta la interfaz al proveedor elegido: key disponible, notas del glosario y de la voz. */
+function mostrarProveedor(): void {
+  const id = ui.proveedor.value;
+  const capacidades = PROVEEDORES[id].crear().capacidades;
+  ui.notaGlosario.textContent = capacidades.notaGlosario;
+  ui.notaVoz.textContent = capacidades.vozEnVivo
+    ? "Con este proveedor la voz llega en vivo y no se puede acelerar (ver README, Decisiones)."
+    : "Con este proveedor la voz se acelera sola cuando se atrasa más de 2 s y salta lo pendiente pasados 5 s.";
+  ui.nombreProveedor.textContent = ui.proveedor.selectedOptions[0]?.textContent?.split(" ")[0] ?? "el proveedor";
+  apiKeyConfigurada = keys[id] ?? false;
+  if (apiKeyConfigurada) {
+    quitarAviso("key");
+  } else {
+    avisar(
+      "key",
+      "error",
+      `Falta la API key de ${ui.nombreProveedor.textContent}.`,
+      `Abre el archivo .env (en la Terminal: open -e .env), pon tu clave en ${VARIABLE_KEY[id]}, guarda y reinicia el servidor (Ctrl+C y npm run dev). Luego recarga esta página.`,
+    );
+  }
+  mostrarGrabando(false);
+}
+
+ui.proveedor.addEventListener("change", mostrarProveedor);
+
 async function revisarConfig(): Promise<void> {
   try {
     const respuesta = await fetch("/api/config");
@@ -446,24 +482,18 @@ async function revisarConfig(): Promise<void> {
       proveedor: string;
       idiomaOrigen: Idioma;
       idiomaDestino: Idioma;
-      apiKeyConfigurada: boolean;
+      keys: Record<string, boolean>;
     };
-    if (PROVEEDORES[config.proveedor]) ui.proveedor.value = config.proveedor;
+    keys = config.keys ?? {};
+    // Si el proveedor por defecto no tiene key pero otro sí, se elige el que funciona.
+    const preferido = PROVEEDORES[config.proveedor] ? config.proveedor : "openai";
+    ui.proveedor.value = keys[preferido] ? preferido : (Object.keys(PROVEEDORES).find((p) => keys[p]) ?? preferido);
     ui.direccion.value = config.idiomaOrigen === "en" && config.idiomaDestino === "es" ? "en-es" : "es-en";
-    apiKeyConfigurada = config.apiKeyConfigurada;
-    if (!apiKeyConfigurada) {
-      avisar(
-        "key",
-        "error",
-        "Falta la API key de OpenAI.",
-        "Copia .env.example a .env, pon tu clave en OPENAI_API_KEY y reinicia el servidor (npm run dev). Luego recarga esta página.",
-      );
-    }
+    mostrarProveedor();
   } catch {
     avisar("key", "error", "No se pudo hablar con el servidor local. ¿Está corriendo `npm run dev`?");
+    mostrarGrabando(false);
   }
-  ui.nombreProveedor.textContent = ui.proveedor.selectedOptions[0]?.textContent?.split(" ")[0] ?? "el proveedor";
-  mostrarGrabando(false);
 }
 
 mostrarVoz();

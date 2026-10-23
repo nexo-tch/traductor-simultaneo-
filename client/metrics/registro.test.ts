@@ -112,4 +112,23 @@ describe("RegistroSesion", () => {
     expect(f.corteForzado).toBe(true);
     expect(latencias(f).cola).toBeUndefined();
   });
+
+  it("guarda la cola provisional aparte y la reemplaza", () => {
+    const r = registro();
+    r.vozLocal(true, 0);
+    r.textoOriginalProvisional("Hola a", 300);
+    r.textoOriginal("Hola", 600);
+    r.textoOriginalProvisional(" a todos", 600);
+    r.textoTraducidoProvisional("Hello", 700);
+    const [f] = r.fragmentos;
+    expect(f.original).toBe("Hola");
+    expect(f.originalProvisional).toBe(" a todos");
+    expect(f.traduccionProvisional).toBe("Hello");
+    expect(f.porPalabra).toBe(true);
+    expect(f.t_primer_texto_original).toBe(300);
+    r.textoOriginal(" a todos", 900);
+    r.textoOriginalProvisional("", 900);
+    expect(f.original).toBe("Hola a todos");
+    expect(f.originalProvisional).toBe("");
+  });
 });

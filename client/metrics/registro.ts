@@ -43,6 +43,11 @@ export interface Fragmento {
   hablante: string;
   original: string;
   traduccion: string;
+  /** Cola sin confirmar (solo proveedores que la entregan): se muestra en gris y no se exporta. */
+  originalProvisional: string;
+  traduccionProvisional: string;
+  /** El proveedor confirma palabra por palabra: lo confirmado se muestra sólido aunque la intervención siga abierta. */
+  porPalabra: boolean;
   originalFinal: boolean;
   traduccionFinal: boolean;
   /** Se cortó por durar demasiado, sin pausa larga: no tiene cola medible. */
@@ -159,6 +164,33 @@ export class RegistroSesion {
     f.t_ultimo_texto_original = t;
   }
 
+  /** Reemplaza la cola sin confirmar del original. */
+  textoOriginalProvisional(texto: string, t: number): void {
+    const abierto = this.abiertoOriginal();
+    if (!texto.trim()) {
+      if (abierto) abierto.originalProvisional = "";
+      return;
+    }
+    const f = abierto ?? this.nuevoFragmento(t);
+    f.porPalabra = true;
+    f.originalProvisional = f.original ? texto : texto.trimStart();
+    f.t_primer_texto_original ??= t;
+  }
+
+  /** Reemplaza la cola sin confirmar de la traducción. */
+  textoTraducidoProvisional(texto: string, t: number): void {
+    const objetivo = this.objetivoTraduccion();
+    if (!texto.trim()) {
+      if (objetivo) objetivo.traduccionProvisional = "";
+      return;
+    }
+    const f = objetivo ?? this.nuevoFragmento(t);
+    f.porPalabra = true;
+    f.traduccionProvisional = f.traduccion ? texto : texto.trimStart();
+    f.t_primer_texto_traducido ??= t;
+    this.ultimoTextoSalida = t;
+  }
+
   textoTraducido(delta: string, t: number): void {
     if (!delta) return;
     const f = this.objetivoTraduccion() ?? this.nuevoFragmento(t);
@@ -251,6 +283,9 @@ export class RegistroSesion {
       hablante: this.config.hablante,
       original: "",
       traduccion: "",
+      originalProvisional: "",
+      traduccionProvisional: "",
+      porPalabra: false,
       originalFinal: false,
       traduccionFinal: false,
       corteForzado: false,
@@ -274,6 +309,7 @@ export class RegistroSesion {
   private cerrarOriginal(f: Fragmento, t: number): void {
     f.originalFinal = true;
     f.original = f.original.trim();
+    f.originalProvisional = "";
     f.t_texto_original_final = t;
     f.cierreEn = undefined;
   }
@@ -281,6 +317,7 @@ export class RegistroSesion {
   private cerrarTraduccion(f: Fragmento): void {
     f.traduccionFinal = true;
     f.traduccion = f.traduccion.trim();
+    f.traduccionProvisional = "";
     if (f.t_primer_texto_traducido !== undefined) f.t_texto_traducido_final = this.ultimoTextoSalida;
     if (f.t_primer_audio_traducido !== undefined && this.ultimoSonido !== undefined) {
       f.t_fin_audio_traducido = Math.max(this.ultimoSonido, f.t_primer_audio_traducido);

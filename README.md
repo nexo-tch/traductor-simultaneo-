@@ -2,11 +2,16 @@
 
 Página local para validar si la traducción simultánea español ↔ inglés es lo bastante rápida y fluida para usarla en reuniones. Hablas al micrófono (o cargas un audio de prueba), ves lo que dijiste con la traducción debajo, escuchas la voz traducida en tus audífonos y la página mide la latencia de cada fragmento.
 
-La especificación completa está en [`SPEC.md`](SPEC.md). Proveedor actual: **OpenAI `gpt-realtime-translate`** por WebRTC.
+La especificación completa está en [`SPEC.md`](SPEC.md). Hay dos proveedores, que se eligen en el selector de la página:
+
+| Proveedor | Cómo funciona | Glosario | Cuándo usarlo |
+| --- | --- | --- | --- |
+| **OpenAI `gpt-realtime-translate`** | Un solo modelo de voz a voz por WebRTC. Espera a tener la idea completa antes de hablar (en las pruebas, unos 3–5 s). | No lo acepta: solo corrige subtítulos. | Traducción más pulida; presentaciones largas. |
+| **Soniox** (`stt-rt-v5` + `tts-rt-v2`) | Transcribe y traduce palabra por palabra; cada pedazo traducido se manda a la voz apenas se confirma. | Sí: se envía como términos de traducción. | Conversación más simultánea. |
 
 ## Instalación (menos de 10 minutos)
 
-Necesitas Node.js 20 o superior, Google Chrome, audífonos y una API key de OpenAI con saldo (con $5–10 alcanza para todas las pruebas).
+Necesitas Node.js 20 o superior, Google Chrome, audífonos y la API key de al menos un proveedor: OpenAI (con $5–10 de saldo alcanza para todas las pruebas) y/o Soniox.
 
 ```bash
 git clone https://github.com/nexo-tch/traductor-simultaneo-.git
@@ -15,7 +20,7 @@ npm install
 cp .env.example .env        # en Windows: copy .env.example .env
 ```
 
-Abre `.env` y pega tu key después de `OPENAI_API_KEY=`. La key se queda en tu computador: el navegador nunca la ve; solo recibe un token temporal.
+Abre `.env` (en la Mac: `open -e .env`) y pega tus keys después de `OPENAI_API_KEY=` y/o `SONIOX_API_KEY=`. Las keys se quedan en tu computador: el navegador nunca las ve; solo recibe llaves temporales. `PROVIDER` elige el proveedor que aparece seleccionado al abrir la página.
 
 ```bash
 npm run dev
@@ -53,7 +58,11 @@ Las intervenciones de más de 30 s sin una pausa larga se cortan en la siguiente
 
 ### Glosario
 
-`gpt-realtime-translate` **no acepta glosario ni instrucciones** (lo dice la guía oficial). Por eso el glosario se usa para dos cosas:
+Con **Soniox**, el glosario se envía al empezar como términos de traducción (`translation_terms`) y como palabras a reconocer (`terms`): corrige la voz y los subtítulos.
+
+Con **OpenAI**, `gpt-realtime-translate` **no acepta glosario ni instrucciones** (lo dice la guía oficial).
+
+Con los dos proveedores, el glosario además sirve para:
 
 1. **Medir**: para cada término que aparece en el original, revisa si la traducción del modelo trae la forma esperada. El porcentaje sale en el panel del glosario y en el resumen del JSON. Es el criterio del 90%.
 2. **Corregir los subtítulos**: en *Variantes a corregir* pones las formas erróneas que ves (por ejemplo `Nexus`), y en pantalla se reemplazan por la forma correcta. **La voz no se corrige.**
@@ -97,7 +106,7 @@ Para agregar un proveedor, implementa `ProveedorTraduccion` (`client/providers/t
 
 Desviaciones de `SPEC.md` y su motivo:
 
-1. **El glosario solo corrige subtítulos y mide aciertos** (RF-08). El modelo no acepta glosario, instrucciones ni guías de pronunciación. Si los nombres de clientes fallan mucho, la alternativa es un segundo proveedor que sí lo acepte (paso 10 del spec).
+1. **Con OpenAI, el glosario solo corrige subtítulos y mide aciertos** (RF-08). El modelo no acepta glosario, instrucciones ni guías de pronunciación. Por eso, y porque espera de 3 a 5 s antes de hablar, se agregó Soniox como segundo proveedor (paso 10 del spec).
 2. **WebRTC directo, sin acelerar la voz** (RF-14, 8.3). Con WebRTC la voz llega como pista en vivo y no hay cola que se pueda acelerar. El "descarte" de la 8.3 se hace silenciando la voz hasta que la traducción alcanza lo más reciente. Si las pruebas muestran que el retraso sí se acumula, la opción es recibir el audio por WebSocket a través del servidor, a cambio de un salto extra de red.
 3. **La unidad es la intervención y la medida principal es el retraso tras terminar de hablar** (`client/metrics/registro.ts`). El proveedor manda el texto como un flujo continuo, sin identificador de fragmento, y la traducción va unos segundos detrás. En la primera prueba real, emparejar frases cortas con su traducción asignaba cada traducción a la frase siguiente, y la latencia del spec ("fin del fragmento → empieza a sonar su traducción") salía con valores negativos sin sentido. Por eso:
    - El panel agrupa por intervenciones (pausas de 1.5 s o más), donde el original y la traducción sí coinciden.
@@ -110,6 +119,14 @@ Desviaciones de `SPEC.md` y su motivo:
 8. **Express en vez de Fastify**, con Vite como middleware: un solo proceso y un solo comando (`npm run dev`).
 9. **Reducción de ruido `near_field`** en la sesión de OpenAI (micrófono cerca de la boca), igual que en la guía oficial.
 10. **El primer audio se mide sobre la pista recibida**, aunque la voz esté silenciada. Si apagas la voz, la métrica dice cuándo *habría* sonado.
+
+11. **Soniox va en dos piezas** (`client/providers/soniox.ts`): transcripción con traducción en streaming (`stt-rt-v5`, traducción `one_way`) y voz en streaming (`tts-rt-v2`). Detalles:
+    - Las palabras traducidas que Soniox confirma se mandan a la voz apenas llegan. Cada frase es un stream de voz que se cierra en un punto final, cuando Soniox detecta el fin del habla, o tras 1.2 s sin texto nuevo.
+    - El audio de la voz pasa por una cola propia (`client/audio/reproductor.ts`). Si la cola pasa de 2 s, las frases nuevas se generan a 1.2× (RF-14). Si pasa de 5 s, se descarta lo pendiente (8.3).
+    - El audio del micrófono se manda en pedazos de 100 ms en WebM/Opus (lo que graba Chrome), sin convertir.
+    - Se usa el SDK oficial `@soniox/client` 2.4.0 para no reimplementar su protocolo. Su web no era accesible al construirlo; la referencia fueron los tipos y ejemplos del SDK.
+    - Voz por defecto: `Adrian` (la del ejemplo oficial). Se cambia con `SONIOX_VOICE` en `.env`.
+12. **Texto provisional**: Soniox manda palabras sin confirmar que luego puede corregir. Se muestran en gris al final del texto confirmado, y no se exportan.
 
 Fuentes técnicas: [guía oficial de gpt-realtime-translate (OpenAI Cookbook)](https://developers.openai.com/cookbook/examples/voice_solutions/realtime_translation_guide) y su [demo de navegador](https://github.com/openai/openai-cookbook/tree/main/examples/voice_solutions/realtime_translation_guide/browser-translation-demo). Solo se usan los eventos documentados ahí (`session.input_transcript.delta`, `session.output_transcript.delta`, `error`); los demás se anotan una vez en la consola del navegador para revisarlos.
 
