@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Probador de fluidez</title>
+    <link rel="stylesheet" href="./estilos.css" />
+  </head>
+  <body>
+    <header class="barra">
+      <div class="barra-fila">
+        <button id="btn-empezar" class="btn-principal" type="button" aria-describedby="estado-grabacion">
+          <span class="punto" aria-hidden="true"></span>
+          <span class="btn-texto">Empezar</span>
+        </button>
+        <span id="estado-grabacion" class="solo-lector">Sin grabar</span>
+
+        <label class="campo">
+          <span class="etiqueta">Dirección</span>
+          <select id="direccion">
+            <option value="es-en">Español → Inglés</option>
+            <option value="en-es">Inglés → Español</option>
+          </select>
+        </label>
+
+        <button id="btn-voz" class="interruptor" type="button" aria-pressed="true" title="Mantén presionada la barra espaciadora para silenciarla un momento">
+          Voz traducida: <strong>encendida</strong>
+        </button>
+
+        <label class="campo campo-volumen">
+          <span class="etiqueta">Volumen de la voz</span>
+          <input id="volumen" type="range" min="0" max="1" step="0.05" value="1" />
+        </label>
+
+        <div id="conexion" class="pastilla" data-estado="desconectado" role="status">
+          <span class="punto" aria-hidden="true"></span><span class="texto">Desconectado</span>
+        </div>
+
+        <dl class="medidor" aria-label="Latencia de la voz traducida">
+          <div><dt>Último</dt><dd id="lat-ultimo">—</dd></div>
+          <div><dt>p50</dt><dd id="lat-p50">—</dd></div>
+          <div><dt>p95</dt><dd id="lat-p95">—</dd></div>
+          <div><dt>Retraso</dt><dd id="retraso">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="barra-fila secundaria">
+        <fieldset class="campo grupo">
+          <legend class="etiqueta">Fuente</legend>
+          <label><input type="radio" name="fuente" value="microfono" checked /> Micrófono</label>
+          <label><input type="radio" name="fuente" value="archivo" /> Audio de prueba</label>
+          <input id="archivo" type="file" accept="audio/*,.wav,.mp3" hidden aria-label="Archivo de audio de prueba" />
+        </fieldset>
+
+        <label class="campo">
+          <span class="etiqueta">Vista</span>
+          <select id="vista">
+            <option value="ambos">Original + traducción</option>
+            <option value="traduccion">Solo traducción</option>
+            <option value="original">Solo original</option>
+          </select>
+        </label>
+
+        <label class="campo">
+          <span class="etiqueta">Proveedor</span>
+          <select id="proveedor"></select>
+        </label>
+
+        <div class="acciones">
+          <button id="btn-json" type="button">Exportar JSON</button>
+          <button id="btn-csv" type="button">Exportar CSV</button>
+          <button id="btn-limpiar" type="button">Limpiar</button>
+          <button id="btn-glosario" type="button" aria-expanded="false" aria-controls="glosario">Glosario</button>
+        </div>
+
+        <details class="ajustes">
+          <summary>Ajustes</summary>
+          <div class="ajustes-cuerpo">
+            <label>Nombre de quien habla <input id="aj-hablante" type="text" value="Hablante" /></label>
+            <label>Sensibilidad del detector de voz
+              <input id="aj-umbral" type="range" min="0.004" max="0.08" step="0.002" value="0.015" />
+              <output id="aj-umbral-valor">0.015</output>
+            </label>
+            <label>Silencio que cierra un fragmento (ms)
+              <input id="aj-silencio" type="number" min="150" max="2000" step="50" value="500" />
+            </label>
+            <label><input id="aj-descarte" type="checkbox" checked /> Saltar la voz atrasada (los subtítulos conservan todo)</label>
+            <label>Saltar cuando el retraso pase de (s)
+              <input id="aj-umbral-descarte" type="number" min="2" max="15" step="0.5" value="5" />
+            </label>
+            <label>Volumen del audio de prueba en tus audífonos
+              <input id="aj-monitor" type="range" min="0" max="1" step="0.05" value="0.3" />
+            </label>
+            <p class="nota">Con este proveedor la voz llega en vivo y no se puede acelerar (ver README, Decisiones).</p>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <div id="avisos" class="avisos" role="alert"></div>
+
+    <div class="contenido">
+      <main class="panel" id="panel" tabindex="-1">
+        <section id="vacio" class="vacio">
+          <h1>Probador de fluidez</h1>
+          <p>Pulsa <strong>Empezar</strong> y habla de corrido. Verás lo que dices y, debajo, la traducción; la voz traducida sonará por tus audífonos.</p>
+          <ul>
+            <li>Usa audífonos para que la voz traducida no vuelva a entrar por el micrófono.</li>
+            <li>Mantén presionada la <kbd>barra espaciadora</kbd> para silenciar la voz un momento.</li>
+            <li>Para probar en Meet, comparte esta pestaña <strong>con audio</strong>.</li>
+          </ul>
+        </section>
+        <ol id="transcripcion" class="transcripcion" data-vista="ambos" aria-label="Transcripción bilingüe"></ol>
+        <button id="ir-reciente" class="ir-reciente" type="button" hidden>Ir a lo más reciente ↓</button>
+      </main>
+
+      <aside id="glosario" class="glosario" hidden aria-labelledby="glosario-titulo">
+        <div class="glosario-cabecera">
+          <h2 id="glosario-titulo">Glosario</h2>
+          <p class="nota">El modelo no acepta glosario: se usa para <strong>corregir los subtítulos</strong> y medir cuántos términos traduce bien. Traducción vacía = no traducir.</p>
+          <p id="glosario-precision" class="precision"></p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Término original</th>
+              <th scope="col">Traducción deseada</th>
+              <th scope="col">Nota</th>
+              <th scope="col" title="Formas erróneas que se reemplazan en los subtítulos, separadas por comas">Variantes a corregir</th>
+              <th scope="col"><span class="solo-lector">Quitar</span></th>
+            </tr>
+          </thead>
+          <tbody id="glosario-filas"></tbody>
+        </table>
+        <div class="acciones">
+          <button id="glosario-agregar" type="button">Agregar término</button>
+          <button id="glosario-exportar" type="button">Guardar archivo</button>
+          <label class="boton">Cargar archivo <input id="glosario-importar" type="file" accept=".json,application/json" hidden /></label>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="pie">
+      <p id="aviso-privacidad">El audio se envía a <span id="nombre-proveedor">OpenAI</span> para traducirlo. No se guarda audio; el historial vive solo en esta pestaña hasta que lo exportes.</p>
+    </footer>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
