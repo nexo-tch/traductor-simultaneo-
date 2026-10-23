@@ -95,7 +95,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
         // La misma configuración que bloqueó el servidor en el token.
         config: {
           responseModalities: [Modality.AUDIO],
-          translationConfig: { targetLanguageCode: this.opciones.idiomaDestino },
+          translationConfig: { targetLanguageCode: this.opciones.idiomaDestino, echoTargetLanguage: false },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         },

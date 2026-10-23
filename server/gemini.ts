@@ -15,7 +15,9 @@ export interface SesionGemini {
 export function configGemini(idiomaDestino: Idioma) {
   return {
     responseModalities: [Modality.AUDIO],
-    translationConfig: { targetLanguageCode: idiomaDestino },
+    // Intérprete de una dirección: si alguien ya habla en el idioma de destino, el modelo calla
+    // en vez de repetirlo (recomendación de la documentación oficial).
+    translationConfig: { targetLanguageCode: idiomaDestino, echoTargetLanguage: false },
     inputAudioTranscription: {},
     outputAudioTranscription: {},
   };
