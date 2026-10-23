@@ -64,6 +64,8 @@ export interface OpcionesConexion {
   idiomaDestino: Idioma;
   glosario: TerminoGlosario[];
   ajustesVoz: AjustesVoz;
+  /** Gemini: avisar el fin del audio en cada pausa para que traduzca lo pendiente sin esperar más audio. */
+  cerrarEnPausas?: boolean;
 }
 
 export interface CapacidadesProveedor {

@@ -37,6 +37,8 @@ const ui = {
   nombreProveedor: $("nombre-proveedor"),
   notaGlosario: $("nota-glosario"),
   notaVoz: $("nota-voz"),
+  ajustesGemini: $<HTMLFieldSetElement>("ajustes-gemini"),
+  cerrarPausas: $<HTMLInputElement>("aj-cerrar-pausas"),
   hablante: $<HTMLInputElement>("aj-hablante"),
   umbral: $<HTMLInputElement>("aj-umbral"),
   umbralValor: $<HTMLOutputElement>("aj-umbral-valor"),
@@ -170,6 +172,21 @@ async function cargarVoces(): Promise<void> {
 for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar]) {
   control.addEventListener(control === ui.velocidad ? "input" : "change", cambiarAjustesVoz);
 }
+
+const CLAVE_CERRAR_PAUSAS = "traductor.gemini.cerrarEnPausas";
+try {
+  const guardado = localStorage.getItem(CLAVE_CERRAR_PAUSAS);
+  if (guardado !== null) ui.cerrarPausas.checked = guardado === "1";
+} catch {
+  // Sin almacenamiento: queda el valor por defecto.
+}
+ui.cerrarPausas.addEventListener("change", () => {
+  try {
+    localStorage.setItem(CLAVE_CERRAR_PAUSAS, ui.cerrarPausas.checked ? "1" : "0");
+  } catch {
+    // Sin almacenamiento.
+  }
+});
 
 // ---------- Original de fondo (SPEC 8.1) ----------
 
@@ -358,7 +375,7 @@ async function empezar(): Promise<void> {
     render();
   }, 100);
 
-  await proveedor.conectar({ entrada: fuente.flujo, idiomaOrigen: origen, idiomaDestino: destino, glosario: glosario.activos(), ajustesVoz: ajustesVoz() }, (evento) =>
+  await proveedor.conectar({ entrada: fuente.flujo, idiomaOrigen: origen, idiomaDestino: destino, glosario: glosario.activos(), ajustesVoz: ajustesVoz(), cerrarEnPausas: ui.cerrarPausas.checked }, (evento) =>
     manejarEvento(actual, evento),
   );
 }
@@ -463,6 +480,7 @@ function datosSesion(): DatosSesion {
       umbralSaltoS: Number(ui.umbralDescarte.value),
       fondoOriginal: { volumen: Number(ui.monitor.value), ducking: ui.ducking.checked },
       ...(PROVEEDORES[ui.proveedor.value].crear().capacidades.vozEnVivo ? {} : { voz: ajustesVoz() }),
+      ...(ui.proveedor.value === "gemini" ? { cerrarEnPausas: ui.cerrarPausas.checked } : {}),
     },
   };
 }
@@ -564,6 +582,7 @@ function mostrarProveedor(): void {
   const capacidades = PROVEEDORES[id].crear().capacidades;
   ui.notaGlosario.textContent = capacidades.notaGlosario;
   ui.ajustesVoz.disabled = capacidades.vozEnVivo;
+  ui.ajustesGemini.disabled = id !== "gemini";
   ui.notaVoz.textContent = capacidades.vozEnVivo
     ? "Con este proveedor la voz llega en vivo y no se puede acelerar (ver README, Decisiones)."
     : "Con este proveedor la voz se acelera sola cuando se atrasa más de 2 s y salta lo pendiente pasados 5 s.";

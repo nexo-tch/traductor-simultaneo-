@@ -26,6 +26,13 @@ const MAX_PEDAZOS_EN_ESPERA = 100;
 const PONERSE_AL_DIA_MS = 6000;
 /** Tras ponerse al día, no se vuelve a medir el atraso durante este tiempo. */
 const PAUSA_TRAS_SALTO_MS = 10000;
+/**
+ * Con "avisar en cada pausa": tras este silencio se manda audioStreamEnd para que Google
+ * traduzca lo pendiente sin esperar más audio. Mientras dure la pausa no se manda audio
+ * (mandar audio reabre el flujo); al volver la voz se mandan antes los últimos 300 ms.
+ */
+const FIN_TRAS_SILENCIO_MS = 700;
+const PEDAZOS_PREVIOS = 3;
 
 interface RespuestaSesion {
   token: string;
@@ -75,6 +82,8 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private bytesPorPedazo = 0;
   private saltoEn = 0;
   private vigilancia: number | undefined;
+  private enPausa = false;
+  private previos: string[] = [];
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -110,10 +119,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
       // La captura arranca antes de abrir la sesión: lo que se diga mientras Google confirma
       // (unos 2 s) queda en espera y se manda apenas la sesión esté lista.
       if (!this.captura) {
-        this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => {
-          if (this.hayVoz(pcm)) this.ultimaVozEnviada = performance.now();
-          this.enviar(aBase64(new Uint8Array(pcm.buffer)));
-        });
+        this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => this.alCapturar(pcm));
       }
       const { token, modelo } = await this.pedirSesion(this.opciones.idiomaDestino);
       if (!this.activo) return;
@@ -180,6 +186,33 @@ export class ProveedorGemini implements ProveedorTraduccion {
       throw new ErrorConexion(cuerpo.mensaje ?? `El servidor local respondió ${respuesta.status}.`, codigo, recuperable);
     }
     return cuerpo as RespuestaSesion;
+  }
+
+  private alCapturar(pcm: Int16Array): void {
+    const t = performance.now();
+    const datos = aBase64(new Uint8Array(pcm.buffer));
+    if (this.hayVoz(pcm)) {
+      this.ultimaVozEnviada = t;
+      if (this.enPausa) {
+        this.enPausa = false;
+        for (const previo of this.previos) this.enviar(previo);
+        this.previos = [];
+      }
+      this.enviar(datos);
+      return;
+    }
+    if (this.enPausa) {
+      this.previos.push(datos);
+      if (this.previos.length > PEDAZOS_PREVIOS) this.previos.shift();
+      return;
+    }
+    this.enviar(datos);
+    const sesion = this.sesionLista;
+    if (this.opciones?.cerrarEnPausas && sesion && sesion === this.sesion && this.ultimaVozEnviada && t - this.ultimaVozEnviada >= FIN_TRAS_SILENCIO_MS) {
+      this.enPausa = true;
+      sesion.sendRealtimeInput({ audioStreamEnd: true });
+      this.emitir({ tipo: "diagnostico", nombre: "gemini_fin_de_audio", muestra: `pausa de ${Math.round(t - this.ultimaVozEnviada)} ms`, t });
+    }
   }
 
   private enviar(datos: string): void {
@@ -260,6 +293,8 @@ export class ProveedorGemini implements ProveedorTraduccion {
       this.enEspera = [];
     }
     this.sesionLista = null;
+    this.enPausa = false;
+    this.previos = [];
     window.clearInterval(this.vigilancia);
     const sesion = this.sesion;
     this.sesion = null;
