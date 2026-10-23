@@ -108,19 +108,19 @@
               </label>
               <label>Cuándo mandar el texto a la voz
                 <select id="aj-envio">
-                  <option value="palabra">Palabra por palabra (más rápido)</option>
                   <option value="frase">Por frases cortas (más natural)</option>
+                  <option value="palabra">Palabra por palabra (más rápido)</option>
                 </select>
               </label>
-              <label>Confirmar palabras en las pausas
-                <select id="aj-latencia">
-                  <option value="0">Normal</option>
-                  <option value="1" selected>Rápido</option>
-                  <option value="2">Más rápido</option>
-                  <option value="3">Lo más rápido (puede cortar frases)</option>
+              <label><input id="aj-suavizar" type="checkbox" checked /> Leer como coma los puntos que llegan mientras sigues hablando</label>
+              <label>Cortes de frase
+                <select id="aj-cortes">
+                  <option value="largas" selected>Solo en pausas largas (más natural)</option>
+                  <option value="pausas">En cada pausa (pone puntos en las micro-pausas)</option>
+                  <option value="rapido">En cada pausa, lo antes posible (más rápido, más cortes)</option>
                 </select>
               </label>
-              <p class="nota">Velocidad, pausas, voz y envío cambian desde la siguiente frase. "Confirmar palabras" aplica al pulsar Empezar.</p>
+              <p class="nota">Todo cambia desde la siguiente frase, menos "Cortes de frase", que aplica al pulsar Empezar.</p>
             </fieldset>
           </div>
         </details>

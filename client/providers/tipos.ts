@@ -39,11 +39,24 @@ export interface AjustesVoz {
   voz: string;
   /** "palabra": cada pedazo confirmado va a la voz al instante. "frase": se junta hasta una coma o 5 palabras (más natural, algo más lento). */
   envio: "palabra" | "frase";
-  /** 0 a 3: cuánto se adelanta la confirmación de palabras en las pausas. Más alto = antes, pero puede cortar frases. */
-  nivelLatencia: number;
+  /**
+   * Cuándo cierra frases Soniox. "largas": solo en pausas largas (más natural).
+   * "pausas": en cada pausa. "rapido": en cada pausa, lo antes posible. Las dos
+   * últimas confirman antes pero ponen puntos en medio de las ideas.
+   */
+  cortes: "largas" | "pausas" | "rapido";
+  /** Un punto que llega mientras la persona sigue hablando se lee como coma. */
+  suavizarPuntos: boolean;
 }
 
-export const AJUSTES_VOZ: AjustesVoz = { velocidad: 1.1, reducirSilencios: true, voz: "", envio: "palabra", nivelLatencia: 1 };
+export const AJUSTES_VOZ: AjustesVoz = {
+  velocidad: 1.1,
+  reducirSilencios: true,
+  voz: "",
+  envio: "frase",
+  cortes: "largas",
+  suavizarPuntos: true,
+};
 
 export interface OpcionesConexion {
   entrada: MediaStream;

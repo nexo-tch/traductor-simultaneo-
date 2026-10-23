@@ -51,7 +51,8 @@ const ui = {
   reducir: $<HTMLInputElement>("aj-reducir"),
   vozElegida: $<HTMLSelectElement>("aj-voz"),
   envio: $<HTMLSelectElement>("aj-envio"),
-  nivelLatencia: $<HTMLSelectElement>("aj-latencia"),
+  cortes: $<HTMLSelectElement>("aj-cortes"),
+  suavizar: $<HTMLInputElement>("aj-suavizar"),
 };
 
 const panel = new PanelBilingue($("panel"), $<HTMLOListElement>("transcripcion"), $<HTMLButtonElement>("ir-reciente"));
@@ -101,7 +102,8 @@ function fuenteElegida(): "microfono" | "archivo" {
 
 // ---------- Ajustes de voz ----------
 
-const CLAVE_AJUSTES_VOZ = "traductor.ajustesVoz.v1";
+// v2: la v1 guardaba la confirmación agresiva en las pausas, que ponía puntos falsos.
+const CLAVE_AJUSTES_VOZ = "traductor.ajustesVoz.v2";
 
 function ajustesVoz(): AjustesVoz {
   return {
@@ -109,7 +111,8 @@ function ajustesVoz(): AjustesVoz {
     reducirSilencios: ui.reducir.checked,
     voz: ui.vozElegida.value,
     envio: ui.envio.value === "frase" ? "frase" : "palabra",
-    nivelLatencia: Number(ui.nivelLatencia.value),
+    cortes: ui.cortes.value === "pausas" || ui.cortes.value === "rapido" ? ui.cortes.value : "largas",
+    suavizarPuntos: ui.suavizar.checked,
   };
 }
 
@@ -118,7 +121,8 @@ function mostrarAjustesVoz(a: AjustesVoz): void {
   ui.velocidadValor.textContent = `${a.velocidad.toFixed(2)}×`;
   ui.reducir.checked = a.reducirSilencios;
   ui.envio.value = a.envio;
-  ui.nivelLatencia.value = String(a.nivelLatencia);
+  ui.cortes.value = a.cortes;
+  ui.suavizar.checked = a.suavizarPuntos;
   ui.vozElegida.dataset.guardada = a.voz;
 }
 
@@ -161,7 +165,7 @@ async function cargarVoces(): Promise<void> {
   }
 }
 
-for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.nivelLatencia]) {
+for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar]) {
   control.addEventListener(control === ui.velocidad ? "input" : "change", cambiarAjustesVoz);
 }
 

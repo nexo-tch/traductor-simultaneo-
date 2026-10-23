@@ -27,9 +27,14 @@ const FACTOR_ACELERACION = 1.15;
 const VELOCIDAD_MAXIMA = 1.3;
 /** Con más audio en cola que esto, se descarta lo pendiente y se sigue con lo más reciente. */
 const DESCARTAR_DESDE_S = 5;
-/** Sin texto nuevo durante este tiempo, se cierra la frase de voz para que termine de sonar. */
-const CIERRE_FRASE_MS = 600;
-const FIN_FRASE = /[.?!…]["')\]]*\s*$/;
+/**
+ * Sin texto nuevo durante este tiempo, se cierra la frase de voz para que termine de sonar.
+ * Mientras llega texto, la voz sigue en una sola frase continua: cerrarla en cada punto
+ * hace que baje la entonación y haga una pausa a mitad de la idea.
+ */
+const CIERRE_FRASE_MS = 1000;
+/** Punto (o exclamación) al final de un pedazo de texto. La "?" se respeta siempre. */
+const PUNTO_FINAL = /[.!…](["')\]]*)\s*$/;
 /** En modo "frase", se manda a la voz al llegar a una pausa natural o a este número de palabras. */
 const PAUSA_NATURAL = /[,;:.?!…]["')\]]*\s*$/;
 const PALABRAS_POR_ENVIO = 5;
@@ -123,6 +128,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   /** Texto traducido que espera una pausa natural (modo "frase"). */
   private porDecir = "";
   private esperaEnvio: number | undefined;
+  /** Se quitó un punto al final del último texto: si sigue llegando texto, se lee como coma. */
+  private puntoPendiente = false;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -162,7 +169,6 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       pieza = "transcripción";
       const stt = new RealtimeSttSession(sesion.llaveStt, URL_STT, this.configStt(sesion.modeloStt));
       stt.on("result", (r) => this.procesar(r));
-      stt.on("endpoint", () => this.cerrarFrase());
       stt.on("error", (e) => this.fallo(e, "transcripción"));
       stt.on("disconnected", () => {
         if (this.activo && this.stt === stt) this.programarReconexion("Se perdió la conexión con Soniox");
@@ -199,14 +205,19 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       model: modelo,
       audio_format: "auto",
       language_hints: [idiomaOrigen],
-      enable_endpoint_detection: true,
-      max_endpoint_delay_ms: 500,
-      endpoint_latency_adjustment_level: this.ajustes?.nivelLatencia ?? 0,
       translation: { type: "one_way", target_language: idiomaDestino },
       context: {
         general: [{ key: "domain", value: "Reunión de trabajo de un equipo de producto y desarrollo de software" }],
       },
     };
+    // Cortar frases en las pausas confirma antes, pero Soniox pone un punto en cada corte
+    // (en las pruebas: "con respecto a el. Modelo de suscripciones. Mi. Idea…").
+    const cortes = this.ajustes?.cortes ?? "largas";
+    if (cortes !== "largas") {
+      config.enable_endpoint_detection = true;
+      config.max_endpoint_delay_ms = 500;
+      config.endpoint_latency_adjustment_level = cortes === "rapido" ? 2 : 0;
+    }
     if (terminos.length) {
       config.context!.terms = terminos.map((t) => t.original.trim());
       config.context!.translation_terms = terminos.map((t) => ({
@@ -263,6 +274,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     window.clearTimeout(this.cierreFrase);
     window.clearTimeout(this.esperaEnvio);
     this.porDecir = "";
+    this.puntoPendiente = false;
     if (this.grabador && this.grabador.state !== "inactive") this.grabador.stop();
     this.grabador = null;
     const stt = this.stt;
@@ -365,21 +377,37 @@ export class ProveedorSoniox implements ProveedorTraduccion {
 
   /** Manda texto a la voz. Las llamadas se encadenan para respetar el orden. */
   private enviarAVoz(texto: string): void {
+    let envio = texto;
+    if (this.puntoPendiente) {
+      // Siguió llegando texto: el punto quitado era un corte a mitad de la idea.
+      envio = `,${envio}`;
+      this.puntoPendiente = false;
+    }
+    if (this.ajustes?.suavizarPuntos && PUNTO_FINAL.test(envio)) {
+      envio = envio.replace(PUNTO_FINAL, "$1");
+      this.puntoPendiente = true;
+    }
+    window.clearTimeout(this.cierreFrase);
+    this.cierreFrase = window.setTimeout(() => this.cerrarFrase(), CIERRE_FRASE_MS);
     this.cadenaVoz = this.cadenaVoz
       .then(async () => {
-        if (!this.tts || !this.activo) return;
+        if (!this.tts || !this.activo || !envio.trim()) return;
         if (!this.abierto || this.abierto.stream.state !== "active") this.abierto = await this.abrirTramo();
-        this.abierto.stream.sendText(texto);
-        window.clearTimeout(this.cierreFrase);
-        if (FIN_FRASE.test(texto)) this.finTramo();
-        else this.cierreFrase = window.setTimeout(() => this.cerrarFrase(), CIERRE_FRASE_MS);
+        this.abierto.stream.sendText(envio);
       })
       .catch((error) => this.emitir({ tipo: "error", codigo: "voz", mensaje: `Voz de Soniox: ${error instanceof Error ? error.message : error}`, recuperable: true, t: performance.now() }));
   }
 
   private cerrarFrase(): void {
     this.soltarPorDecir();
-    this.cadenaVoz = this.cadenaVoz.then(() => this.finTramo());
+    window.clearTimeout(this.cierreFrase);
+    // No llegó más texto: el punto era real y la frase termina.
+    const punto = this.puntoPendiente;
+    this.puntoPendiente = false;
+    this.cadenaVoz = this.cadenaVoz.then(() => {
+      if (punto && this.abierto?.stream.state === "active") this.abierto.stream.sendText(".");
+      this.finTramo();
+    });
   }
 
   private finTramo(): void {
@@ -444,6 +472,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     this.tramos = [];
     this.abierto = null;
     this.porDecir = "";
+    this.puntoPendiente = false;
     this.emitir({ tipo: "diagnostico", nombre: "voz_descartada", muestra: `Más de ${DESCARTAR_DESDE_S} s de voz en cola`, t: performance.now() });
   }
 
