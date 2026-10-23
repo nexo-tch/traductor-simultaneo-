@@ -14,6 +14,8 @@ export interface Fuente {
   detener(): void;
   /** Solo en archivos: se llama cuando el archivo termina de sonar. */
   alTerminar?: (cb: () => void) => void;
+  /** Solo en archivos: volumen del original en los audífonos (0–1), con una transición corta. */
+  volumenOriginal?: (valor: number) => void;
 }
 
 export async function microfono(): Promise<Fuente> {
@@ -74,5 +76,7 @@ export async function archivoDePrueba(contexto: AudioContext, archivo: File, mon
       destino.stream.getTracks().forEach((p) => p.stop());
     },
     alTerminar: (cb) => (terminado ? cb() : esperando.push(cb)),
+    // 60 ms para bajar o subir: sin golpes de volumen, y muy por debajo de lo que se percibe como retraso.
+    volumenOriginal: (valor) => volumen.gain.setTargetAtTime(valor, contexto.currentTime, 0.06),
   };
 }

@@ -47,6 +47,11 @@ export interface AjustesVoz {
   cortes: "largas" | "pausas" | "rapido";
   /** Un punto que llega mientras la persona sigue hablando se lee como coma. */
   suavizarPuntos: boolean;
+  /**
+   * Experimental: dice las palabras provisionales que ya no cambian, sin esperar
+   * la confirmación (SPEC 8.2). Más rápido, pero lo dicho no se puede corregir.
+   */
+  anticipar: boolean;
 }
 
 export const AJUSTES_VOZ: AjustesVoz = {
@@ -56,6 +61,7 @@ export const AJUSTES_VOZ: AjustesVoz = {
   envio: "frase",
   cortes: "largas",
   suavizarPuntos: true,
+  anticipar: false,
 };
 
 export interface OpcionesConexion {

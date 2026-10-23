@@ -45,6 +45,7 @@ const ui = {
   descarte: $<HTMLInputElement>("aj-descarte"),
   umbralDescarte: $<HTMLInputElement>("aj-umbral-descarte"),
   monitor: $<HTMLInputElement>("aj-monitor"),
+  ducking: $<HTMLInputElement>("aj-ducking"),
   ajustesVoz: $<HTMLFieldSetElement>("ajustes-voz"),
   velocidad: $<HTMLInputElement>("aj-velocidad"),
   velocidadValor: $<HTMLOutputElement>("aj-velocidad-valor"),
@@ -53,6 +54,7 @@ const ui = {
   envio: $<HTMLSelectElement>("aj-envio"),
   cortes: $<HTMLSelectElement>("aj-cortes"),
   suavizar: $<HTMLInputElement>("aj-suavizar"),
+  anticipar: $<HTMLInputElement>("aj-anticipar"),
 };
 
 const panel = new PanelBilingue($("panel"), $<HTMLOListElement>("transcripcion"), $<HTMLButtonElement>("ir-reciente"));
@@ -113,6 +115,7 @@ function ajustesVoz(): AjustesVoz {
     envio: ui.envio.value === "frase" ? "frase" : "palabra",
     cortes: ui.cortes.value === "pausas" || ui.cortes.value === "rapido" ? ui.cortes.value : "largas",
     suavizarPuntos: ui.suavizar.checked,
+    anticipar: ui.anticipar.checked,
   };
 }
 
@@ -123,6 +126,7 @@ function mostrarAjustesVoz(a: AjustesVoz): void {
   ui.envio.value = a.envio;
   ui.cortes.value = a.cortes;
   ui.suavizar.checked = a.suavizarPuntos;
+  ui.anticipar.checked = a.anticipar;
   ui.vozElegida.dataset.guardada = a.voz;
 }
 
@@ -165,9 +169,27 @@ async function cargarVoces(): Promise<void> {
   }
 }
 
-for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar]) {
+for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar, ui.anticipar]) {
   control.addEventListener(control === ui.velocidad ? "input" : "change", cambiarAjustesVoz);
 }
+
+// ---------- Original de fondo (SPEC 8.1) ----------
+
+let traduccionSonando = false;
+
+/**
+ * En el modo audio de prueba, el original suena de fondo como lo oiría quien escucha la
+ * traducción. Con ducking baja al 40% mientras suena la traducción: con el volumen por
+ * defecto (45%), queda en ~18%, dentro del 16–25% del spec.
+ */
+function aplicarFondo(): void {
+  const maximo = Number(ui.monitor.value);
+  const nivel = ui.ducking.checked && traduccionSonando ? maximo * 0.4 : maximo;
+  sesion?.fuente.volumenOriginal?.(nivel);
+}
+
+ui.monitor.addEventListener("input", aplicarFondo);
+ui.ducking.addEventListener("change", aplicarFondo);
 
 // ---------- Avisos ----------
 
@@ -362,8 +384,11 @@ function manejarEvento(actual: Sesion, evento: EventoProveedor): void {
     case "audio_traducido":
       voz.conectar(evento.pista);
       actual.salida?.detener();
-      actual.salida = new DetectorActividad(actual.contexto, evento.pista, { umbral: 0.01, silencioMs: 250 }, (sonando, t) =>
-        registro.audioSalida(sonando, t),
+      actual.salida = new DetectorActividad(actual.contexto, evento.pista, { umbral: 0.01, silencioMs: 250 }, (sonando, t) => {
+        registro.audioSalida(sonando, t);
+        traduccionSonando = sonando;
+        aplicarFondo();
+      }
       );
       break;
     case "estado_conexion":
@@ -405,6 +430,7 @@ function detener(): void {
   void actual.contexto.close();
   voz.desconectar();
   voz.silenciar("descarte", false);
+  traduccionSonando = false;
   registro.cerrarTodo(performance.now());
   quitarAviso("conexion");
   quitarAviso("archivo");
@@ -432,6 +458,7 @@ function datosSesion(): DatosSesion {
       pausaIntervencionMs: registro.config.pausaIntervencionMs,
       saltarRetraso: ui.descarte.checked,
       umbralSaltoS: Number(ui.umbralDescarte.value),
+      fondoOriginal: { volumen: Number(ui.monitor.value), ducking: ui.ducking.checked },
       ...(PROVEEDORES[ui.proveedor.value].crear().capacidades.vozEnVivo ? {} : { voz: ajustesVoz() }),
     },
   };

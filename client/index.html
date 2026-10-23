@@ -92,9 +92,10 @@
             <label>Saltar cuando el retraso pase de (s)
               <input id="aj-umbral-descarte" type="number" min="2" max="15" step="0.5" value="5" />
             </label>
-            <label>Volumen del audio de prueba en tus audífonos
-              <input id="aj-monitor" type="range" min="0" max="1" step="0.05" value="0.3" />
+            <label>Volumen del original de fondo (audio de prueba)
+              <input id="aj-monitor" type="range" min="0" max="1" step="0.05" value="0.45" />
             </label>
+            <label><input id="aj-ducking" type="checkbox" checked /> Bajar el original mientras suena la traducción</label>
             <p class="nota" id="nota-voz"></p>
             <fieldset id="ajustes-voz" class="ajustes-grupo">
               <legend>Voz traducida (Soniox)</legend>
@@ -113,6 +114,7 @@
                 </select>
               </label>
               <label><input id="aj-suavizar" type="checkbox" checked /> Leer como coma los puntos que llegan mientras sigues hablando</label>
+              <label><input id="aj-anticipar" type="checkbox" /> Experimental: hablar antes de que Soniox confirme (más rápido; a veces dice una palabra que luego se corrige)</label>
               <label>Cortes de frase
                 <select id="aj-cortes">
                   <option value="largas" selected>Solo en pausas largas (más natural)</option>

@@ -15,6 +15,7 @@ import {
   type SttSessionConfig,
 } from "@soniox/client";
 import { ReproductorPcm } from "../audio/reproductor";
+import { Anticipador } from "./anticipador";
 import type { AjustesVoz, EstadoConexion, EventoProveedor, OpcionesConexion, ProveedorTraduccion } from "./tipos";
 
 const URL_STT = "wss://stt-rt.soniox.com/transcribe-websocket";
@@ -138,6 +139,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   /** Se quitó un punto al final del último texto: si sigue llegando texto, se lee como coma. */
   private puntoPendiente = false;
   private colaVigilada = "";
+  private readonly anticipador = new Anticipador();
   private esperaConfirmar: number | undefined;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
@@ -284,6 +286,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     window.clearTimeout(this.esperaEnvio);
     window.clearTimeout(this.esperaConfirmar);
     this.colaVigilada = "";
+    this.anticipador.reiniciar();
     this.porDecir = "";
     this.puntoPendiente = false;
     if (this.grabador && this.grabador.state !== "inactive") this.grabador.stop();
@@ -354,8 +357,16 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       this.provisionalOriginal = provisionalOriginal;
       this.emitir({ tipo: "transcripcion_provisional", texto: provisionalOriginal, t });
     }
-    if (traduccion) {
-      this.emitir({ tipo: "traduccion_parcial", texto: traduccion, t });
+    if (traduccion) this.emitir({ tipo: "traduccion_parcial", texto: traduccion, t });
+    if (this.ajustes?.anticipar) {
+      // Lo estable va a la voz apenas se sabe, sin agrupar por frases.
+      const correccionesAntes = this.anticipador.correcciones;
+      const decir = this.anticipador.actualizar(traduccion, provisionalTraduccion);
+      if (decir) this.enviarAVoz(decir);
+      if (this.anticipador.correcciones > correccionesAntes) {
+        this.emitir({ tipo: "diagnostico", nombre: "correccion_ya_dicha", muestra: this.anticipador.ultimaCorreccion, t });
+      }
+    } else if (traduccion) {
       this.hablar(traduccion);
     }
     if (provisionalTraduccion !== this.provisionalTraduccion) {
