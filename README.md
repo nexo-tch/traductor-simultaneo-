@@ -1,4 +1,8 @@
-# Traductor simultáneo ES ↔ EN: probador de fluidez (Fase 1)
+# Traductor simultáneo ES ↔ EN
+
+Probador de fluidez (Fase 1) y extensión de Chrome para Google Meet (ver [Extensión para Google Meet](#extensión-para-google-meet)).
+
+## Probador de fluidez (Fase 1)
 
 Página local para validar si la traducción simultánea español ↔ inglés es lo bastante rápida y fluida para usarla en reuniones. Hablas al micrófono (o cargas un audio de prueba), ves lo que dijiste con la traducción debajo, escuchas la voz traducida en tus audífonos y la página mide la latencia de cada fragmento.
 
@@ -78,6 +82,31 @@ Con los dos proveedores, el glosario además sirve para:
 4. **En Meet**: en la reunión, *Presentar → Una pestaña*, elige esta pestaña y deja activado **Compartir audio de la pestaña**. Tu colega oye la voz traducida y ve los subtítulos.
 5. **Glosario**: carga los 10–20 términos, lee un texto que los use todos y revisa el porcentaje.
 
+## Extensión para Google Meet
+
+Una extensión de Chrome que traduce lo que se dice en la reunión y lo pone en un panel lateral, junto a Meet. Escucha el audio de la pestaña de Meet y te traduce a tu idioma lo que se diga en el otro. Gemini calla lo que ya está en tu idioma: si eliges *Traducir a: Español*, solo oyes voz traducida cuando alguien habla en inglés. Cada persona que necesita traducción instala la extensión en su Chrome. Quien habla no necesita nada.
+
+**Instalar (una vez):**
+
+1. `npm install` y `npm run build:extension`. Crea la carpeta `dist/extension`.
+2. En Chrome abre `chrome://extensions`, activa **Modo de desarrollador** (arriba a la derecha) y pulsa **Cargar descomprimida**. Elige la carpeta `dist/extension`.
+3. Fija el ícono: en la barra de Chrome, pieza de rompecabezas → pin junto a "Traductor simultáneo para Meet".
+
+**Usar en una reunión:**
+
+1. Deja corriendo `npm run dev`: la extensión le pide los tokens de Gemini a ese servidor local (`http://127.0.0.1:5173`), que es el único que conoce la key.
+2. Ponte **audífonos**. Si la voz traducida sale por los parlantes, tu micrófono la capta y los demás la oyen.
+3. Entra a la reunión de Meet y haz clic en el ícono de la extensión. Se abre el panel lateral y empieza a traducir.
+4. En el panel:
+   - **Traducir a**: tu idioma.
+   - **Voz traducida**: encender o apagar. Atajo: `Alt+Shift+T`, funciona aunque estés en Meet.
+   - **Volumen y vista**: volumen de la voz y de la reunión, y si la reunión baja mientras suena la traducción.
+5. **Detener** para terminar. Para volver a empezar, haz clic de nuevo en el ícono estando en la pestaña de Meet.
+
+Al capturar la pestaña, Chrome la silencia; la extensión vuelve a reproducir el audio de la reunión por su cuenta, más bajo mientras suena la traducción. Funciona con cualquier pestaña con audio (por ejemplo, un video en inglés de YouTube), útil para probarla sin reunión.
+
+Tras cambiar el código de la extensión: `npm run build:extension` (o `npm run dev:extension`, que reconstruye solo) y en `chrome://extensions` el botón de recargar de la extensión.
+
 ## Comandos
 
 | Comando | Para qué |
@@ -86,6 +115,8 @@ Con los dos proveedores, el glosario además sirve para:
 | `npm test` | Pruebas unitarias (fragmentos, métricas, glosario). |
 | `npm run typecheck` | Revisión de tipos. |
 | `npm run build` y `npm start` | Versión compilada, sin recarga automática. |
+| `npm run build:extension` | Construye la extensión de Chrome en `dist/extension`. |
+| `npm run dev:extension` | Igual, y la reconstruye con cada cambio. |
 
 ## Estructura
 
@@ -98,6 +129,11 @@ client/
   glosario/      lógica del glosario (corrección y medición)
   ui/            panel bilingüe y panel del glosario
   main.ts        une todo
+extension/       extensión de Chrome para Meet (reutiliza client/providers y client/audio)
+  background.ts  clic en el ícono: abre el panel y captura la pestaña
+  offscreen.ts   audio: captura, Gemini, mezcla de la reunión y la voz traducida
+  panel.*        panel lateral: controles y transcripción
+  transcripcion.ts  entradas por idioma y pausas
 test-audio/      grabaciones de referencia (no se suben)
 ```
 
@@ -142,6 +178,12 @@ Desviaciones de `SPEC.md` y su motivo:
     - Gemini traduce sin pausas, así que la traducción de una intervención puede seguir llegando cuando ya terminó la siguiente. En ese caso se unen: el texto queda en la primera, y la cola se mide en la última (`traduccion_en` en el JSON).
     - **Ponerse al día.** En una prueba, Google tardó hasta ~30 s en reconocer el audio, aunque la voz traducida sonaba sin cola. El adaptador mide dos atrasos. Uno es el audio que espera subir en el navegador (`bufferedAmount` del WebSocket). El otro es una cota inferior del atraso de Google: si sigue transcribiendo cuando ya pasaron más de 1,5 s sin voz en lo enviado, va atrasado al menos ese tiempo. La suma va al medidor *Ahora*. Si pasa de 6 s, abre una sesión nueva y descarta lo pendiente (`gemini_puesta_al_dia`): en una reunión es mejor saltar unos segundos que quedar cada vez más atrás. Solo se puede medir en las pausas.
     - **Fin del audio en cada pausa** (*Ajustes → Gemini*, activado por defecto). Con la nota de prueba, Google entregaba el final de la transcripción ~1,4 s después de que terminaba el habla, y la voz terminaba ~3,9 s después. Tras 700 ms de silencio se manda `audioStreamEnd`, que según el SDK indica que el flujo de audio terminó y se reabre al mandar audio. Así Google traduce lo pendiente sin esperar más audio. El silencio se sigue mandando (`gemini_fin_de_audio` en el JSON). Una primera versión dejaba de mandar audio durante la pausa, y en una prueba Google no entregó las últimas palabras de la nota. Es un experimento: la documentación no dice cómo lo trata el modelo de traducción.
+18. **Extensión para Meet: escucha la reunión en vez de capturar el micrófono de cada hablante** (se aparta de SPEC 10.2). El SPEC elige una extensión que captura el micrófono de cada hablante y reenvía la traducción por un servidor en la nube (Fases 2 y 3). Se hizo primero una extensión del *oyente*: captura el audio de la pestaña de Meet (`chrome.tabCapture` + documento `offscreen`) y le traduce a cada persona lo que se dice en el otro idioma. Motivos:
+    - Gemini Live Translate con `echoTargetLanguage: false` ya resuelve la reunión bilingüe: traduce el otro idioma y calla lo que está en el del oyente.
+    - Sale en ambas direcciones sin servidor de reenvío ni despliegue, y quien habla no instala nada.
+    - El panel lateral (`chrome.sidePanel`) cubre el panel de la Fase 3.
+
+    Costos aceptados: suma el viaje del audio por Meet (~0,2–0,5 s), el audio llega mezclado (las entradas del panel se separan por idioma y pausas, no por persona) y cada oyente paga su propia sesión de Gemini. Para usarla en el Mac del usuario, la extensión pide los tokens al servidor local; para colegas habrá que desplegar ese servidor.
 15. **El detector de voz se calibra con el ruido de fondo**: el umbral es el mayor entre la sensibilidad de *Ajustes* y el doble del ruido medido (percentil 20 de los últimos 6 s). Con la nota de WhatsApp, el umbral fijo quedaba al nivel del ruido y no se detectaba ninguna pausa.
 16. **Diagnóstico de la voz** en `eventos` del JSON: cuándo crece la traducción provisional (`traduccion_provisional`), qué texto va a la voz y cuándo (`a_la_voz#N`), cuándo empieza a sonar cada frase de voz y cuánto audio había en cola (`voz_primer_audio#N`) y cuándo termina (`voz_fin#N`).
 14. **Original de fondo con *ducking*** (SPEC 8.1), solo en el modo audio de prueba: el original suena al volumen de *Ajustes* (45% por defecto) y baja al 40% de ese valor (~18%) mientras suena la traducción, con transiciones de 60 ms. Así se oye como lo oiría quien escucha la interpretación. Con micrófono no aplica: quien habla oye su propia voz.
