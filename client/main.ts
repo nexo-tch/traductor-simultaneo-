@@ -39,6 +39,7 @@ const ui = {
   umbral: $<HTMLInputElement>("aj-umbral"),
   umbralValor: $<HTMLOutputElement>("aj-umbral-valor"),
   silencio: $<HTMLInputElement>("aj-silencio"),
+  pausa: $<HTMLInputElement>("aj-pausa"),
   descarte: $<HTMLInputElement>("aj-descarte"),
   umbralDescarte: $<HTMLInputElement>("aj-umbral-descarte"),
   monitor: $<HTMLInputElement>("aj-monitor"),
@@ -72,7 +73,11 @@ let retrasoMaximo = 0;
 let apiKeyConfigurada = true;
 
 function nuevoRegistro(): RegistroSesion {
-  return new RegistroSesion({ ...CONFIG_REGISTRO, hablante: ui.hablante.value.trim() || "Hablante" });
+  return new RegistroSesion({
+    ...CONFIG_REGISTRO,
+    hablante: ui.hablante.value.trim() || "Hablante",
+    pausaIntervencionMs: Number(ui.pausa.value) || CONFIG_REGISTRO.pausaIntervencionMs,
+  });
 }
 
 function idiomas(): { origen: Idioma; destino: Idioma } {
@@ -161,7 +166,7 @@ function nivelLatencia(ms: number | null): string {
 
 function actualizarMedidor(retrasoMs: number): void {
   const resumen = resumirSesion(registro.fragmentos, glosario.activos(), retrasoMaximo);
-  const r = resumen.latenciaVoz;
+  const r = resumen.cola;
   ui.latUltimo.textContent = formatoSegundos(r.ultimo);
   ui.latP50.textContent = formatoSegundos(r.p50);
   ui.latP95.textContent = formatoSegundos(r.p95);
@@ -291,7 +296,7 @@ function controlarRetraso(retrasoMs: number): void {
   if (!saltando && ui.descarte.checked && retrasoMs > umbral) {
     voz.silenciar("descarte", true);
     mostrarVoz();
-  } else if (saltando && (!ui.descarte.checked || (registro.pendientes() <= 1 && retrasoMs < umbral / 2))) {
+  } else if (saltando && (!ui.descarte.checked || retrasoMs < umbral / 2)) {
     voz.silenciar("descarte", false);
     mostrarVoz();
   }
@@ -332,6 +337,7 @@ function datosSesion(): DatosSesion {
     config: {
       umbralVoz: Number(ui.umbral.value),
       silencioMs: Number(ui.silencio.value),
+      pausaIntervencionMs: registro.config.pausaIntervencionMs,
       saltarRetraso: ui.descarte.checked,
       umbralSaltoS: Number(ui.umbralDescarte.value),
     },
@@ -376,12 +382,15 @@ ui.limpiar.addEventListener("click", () => {
 });
 
 ui.hablante.addEventListener("change", () => {
-  if (!registro.fragmentos.length) registro = nuevoRegistro();
+  registro.config.hablante = ui.hablante.value.trim() || "Hablante";
 });
 
 ui.umbral.addEventListener("input", () => {
   ui.umbralValor.textContent = ui.umbral.value;
   if (sesion) sesion.entrada.config.umbral = Number(ui.umbral.value);
+});
+ui.pausa.addEventListener("change", () => {
+  registro.config.pausaIntervencionMs = Number(ui.pausa.value) || CONFIG_REGISTRO.pausaIntervencionMs;
 });
 ui.silencio.addEventListener("change", () => {
   if (sesion) sesion.entrada.config.silencioMs = Number(ui.silencio.value);

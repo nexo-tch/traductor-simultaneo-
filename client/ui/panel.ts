@@ -46,7 +46,7 @@ export class PanelBilingue {
       if (!f.original && !f.traduccion) continue;
       const traduccion = aplicarGlosario(f.traduccion, glosario);
       const l = latencias(f);
-      const firma = [f.hablante, f.original, traduccion, f.originalFinal, f.traduccionFinal, l.voz, origen].join("|");
+      const firma = [f.hablante, f.original, traduccion, f.originalFinal, f.traduccionFinal, l.cola, l.arranque, origen].join("|");
       let n = this.nodos.get(f.id);
       if (n && n.firma === firma) continue;
       if (!n) {
@@ -64,11 +64,16 @@ export class PanelBilingue {
       n.traduccion.textContent = traduccion || "…";
       n.traduccion.lang = destino;
       n.traduccion.classList.toggle("parcial", !f.traduccionFinal);
-      n.latencia.textContent = l.voz === undefined ? "" : formatoSegundos(l.voz, true);
-      n.latencia.title =
-        l.voz === undefined
+      n.latencia.textContent =
+        l.cola === undefined ? "" : `${f.colaInterrumpida ? "≥ " : ""}${formatoSegundos(l.cola, true)}`;
+      n.latencia.title = [
+        l.cola === undefined
           ? ""
-          : `Voz: ${formatoSegundos(l.voz, true)} · Texto: ${formatoSegundos(l.texto, true)} · Termina de sonar: ${formatoSegundos(l.cierre, true)}${f.finAproximado ? " · fin del habla aproximado (sin pausa)" : ""}`;
+          : `La traducción siguió sonando ${formatoSegundos(l.cola)} después de que terminaste${f.colaInterrumpida ? " (o más: volviste a hablar antes)" : ""}.`,
+        l.arranque === undefined ? "" : `Empezó a sonar ${formatoSegundos(l.arranque)} después de que empezaste a hablar.`,
+      ]
+        .filter(Boolean)
+        .join(" ");
     }
     if (cambio && this.seguir) this.irAlFinal();
   }

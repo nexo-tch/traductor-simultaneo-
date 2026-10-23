@@ -40,16 +40,16 @@ Abre <http://localhost:5173> en Chrome, conecta los audífonos y pulsa **Empezar
 
 ### Cómo leer las métricas
 
-Para cada fragmento se mide desde que **termina de pronunciarse** hasta que pasa algo con su traducción:
+Cada entrada del panel es una **intervención**: lo que dices hasta que haces una pausa de 1.5 s o más (ajustable en *Ajustes*). La traducción se asigna a la intervención hasta que la voz traducida se calla.
 
-- **Latencia de voz** (la principal, la que muestran *Último*, *p50* y *p95*): hasta que **empieza a sonar** la traducción. Puede salir **negativa**: el modelo es simultáneo y a veces empieza a traducir una frase larga antes de que termine.
-- **Latencia de texto**: hasta el primer texto traducido.
-- **Termina de sonar**: hasta que la traducción del fragmento termina de sonar. Pasa el mouse sobre la latencia de una entrada para verla.
-- **Retraso**: cuánto lleva esperando el fragmento más antiguo cuya traducción no ha terminado. Si pasa del umbral de *Ajustes* (5 s por defecto), la voz se salta hasta alcanzar lo más reciente; los subtítulos conservan todo.
+- **Retraso tras terminar de hablar** (la medida principal; *Último*, *p50* y *p95*): cuánto **sigue sonando** la traducción después de que terminas una intervención. Es lo que espera quien escucha antes de poder responder. Cada entrada lo muestra en pequeño (por ejemplo, "+2.4 s").
+- Si vuelves a hablar antes de que termine la traducción, la entrada muestra "≥" y ese valor es solo un mínimo. Esas no entran en p50/p95; el JSON las cuenta aparte en `colasInterrumpidas`.
+- **Arranque** (pasa el mouse sobre la latencia de una entrada): cuánto tarda la traducción en empezar a sonar desde que empiezas a hablar.
+- **Ahora**: cuánto lleva sonando la traducción desde que te callaste. Si pasa del umbral de *Ajustes* (5 s por defecto), la voz se salta hasta alcanzarte; los subtítulos conservan todo. Mientras hablas vale 0, porque no se puede saber cuánto falta.
 
-Los colores del medidor siguen la meta del spec: ámbar por encima de 1.5 s y rojo por encima de 2.5 s.
+Los colores siguen la meta del spec: ámbar por encima de 1.5 s y rojo por encima de 2.5 s.
 
-Un fragmento marcado con **fin aproximado** (en el JSON, `fin_aproximado: true`) se cortó por puntuación mientras seguías hablando sin pausa. Ahí el fin del habla es la llegada del texto, que llega unos cientos de ms tarde, así que la latencia real es algo mayor que la medida.
+Las intervenciones de más de 30 s sin una pausa larga se cortan en la siguiente pausa corta. Esas no tienen retraso medible y en el JSON salen con `corte_forzado: true`.
 
 ### Glosario
 
@@ -99,10 +99,13 @@ Desviaciones de `SPEC.md` y su motivo:
 
 1. **El glosario solo corrige subtítulos y mide aciertos** (RF-08). El modelo no acepta glosario, instrucciones ni guías de pronunciación. Si los nombres de clientes fallan mucho, la alternativa es un segundo proveedor que sí lo acepte (paso 10 del spec).
 2. **WebRTC directo, sin acelerar la voz** (RF-14, 8.3). Con WebRTC la voz llega como pista en vivo y no hay cola que se pueda acelerar. El "descarte" de la 8.3 se hace silenciando la voz hasta que la traducción alcanza lo más reciente. Si las pruebas muestran que el retraso sí se acumula, la opción es recibir el audio por WebSocket a través del servidor, a cambio de un salto extra de red.
-3. **Los fragmentos los arma la app** (`client/metrics/registro.ts`). El proveedor manda el texto como un flujo continuo, sin identificador de fragmento ni marcas de tiempo. Se corta por pausas (detector de voz local, configurable en *Ajustes*) y por puntuación, y la traducción se asigna en orden. Las latencias son aproximadas.
+3. **La unidad es la intervención y la medida principal es el retraso tras terminar de hablar** (`client/metrics/registro.ts`). El proveedor manda el texto como un flujo continuo, sin identificador de fragmento, y la traducción va unos segundos detrás. En la primera prueba real, emparejar frases cortas con su traducción asignaba cada traducción a la frase siguiente, y la latencia del spec ("fin del fragmento → empieza a sonar su traducción") salía con valores negativos sin sentido. Por eso:
+   - El panel agrupa por intervenciones (pausas de 1.5 s o más), donde el original y la traducción sí coinciden.
+   - La medida principal es cuánto sigue sonando la traducción después de que la persona se calla. No depende de emparejar textos y es lo que espera quien escucha. Se compara con las mismas metas del spec (p50 ≤ 1.5 s, p95 ≤ 2.5 s).
+   - El modelo a veces se calla a mitad de frase esperando contexto. Si la traducción no termina en punto, se espera un silencio de 2 s (en vez de 0.6 s) antes de darla por terminada.
 4. **El idioma de origen lo detecta el modelo.** El selector de dirección solo fija el idioma de destino. Si alguien habla en el idioma de destino, el modelo no lo traduce y la voz queda en silencio en ese tramo.
 5. **La voz no se puede elegir**: el modelo imita el tono de quien habla.
-6. **Métricas adicionales**: además de la latencia de voz del spec (que puede ser negativa en traducción simultánea), se registran la latencia de texto y cuándo termina de sonar cada fragmento.
+6. **Métrica adicional**: el *arranque* (inicio del habla → primer audio traducido). Las marcas de tiempo del spec (11.1) se exportan completas por intervención.
 7. **Columna extra en el glosario**: *Variantes a corregir*, para poder corregir los subtítulos.
 8. **Express en vez de Fastify**, con Vite como middleware: un solo proceso y un solo comando (`npm run dev`).
 9. **Reducción de ruido `near_field`** en la sesión de OpenAI (micrófono cerca de la boca), igual que en la guía oficial.
@@ -115,8 +118,8 @@ Fuentes técnicas: [guía oficial de gpt-realtime-translate (OpenAI Cookbook)](h
 | Criterio | Estado |
 | --- | --- |
 | Requisitos **Debe** de la sección 4 | Implementados. RF-08 con la salvedad de la decisión 1. |
-| Latencia p50 ≤ 1.5 s y p95 ≤ 2.5 s | **Pendiente**: requiere la prueba con key real. |
-| 5 minutos seguidos sin que el retraso pase de 5 s | **Pendiente**: se mide con *Retraso* y `retrasoMaximoMs` en el JSON. |
+| Latencia p50 ≤ 1.5 s y p95 ≤ 2.5 s | **Pendiente**. Primera prueba real (2.5 min, medida a mano): la traducción sigue sonando unos 3–3.5 s después de cada intervención. |
+| 5 minutos seguidos sin que el retraso pase de 5 s | **Pendiente**. En la primera prueba el retraso no creció con el tiempo. Se mide con *Ahora* y `retrasoMaximoMs` en el JSON. |
 | Interruptor de voz en menos de 150 ms | Silencia el elemento de audio de inmediato. Falta confirmarlo de oído. |
 | 90% de términos del glosario correctos | **Pendiente**: se mide en el panel del glosario. |
 | El colega entiende la prueba en Meet | **Pendiente**. |

@@ -1,7 +1,7 @@
 // Exportación de la sesión (RF-10): JSON completo o CSV para hoja de cálculo.
 import { evaluarGlosario, type TerminoGlosario } from "../glosario/glosario";
 import { resumir, type Resumen } from "./estadisticas";
-import { latencias, type Fragmento } from "./registro";
+import { latencias, type Fragmento, type Latencias } from "./registro";
 
 const MARCAS = [
   "t_inicio_habla",
@@ -28,10 +28,13 @@ export interface DatosSesion {
 }
 
 export interface ResumenSesion {
-  fragmentos: number;
-  latenciaVoz: Resumen;
-  latenciaTexto: Resumen;
-  retrasoCierre: Resumen;
+  intervenciones: number;
+  /** Principal: cuánto sigue sonando la traducción tras dejar de hablar (solo intervenciones medibles). */
+  cola: Resumen;
+  /** Intervenciones en las que se volvió a hablar antes de que terminara la traducción (su cola es una cota inferior). */
+  colasInterrumpidas: number;
+  /** Desde que empieza a hablarse hasta que suena la traducción. */
+  arranque: Resumen;
   retrasoMaximoMs: number;
   glosario: { apariciones: number; correctas: number; porcentaje: number | null };
 }
@@ -42,15 +45,16 @@ function conTexto(fragmentos: Fragmento[]): Fragmento[] {
 
 export function resumirSesion(fragmentos: Fragmento[], glosario: TerminoGlosario[], retrasoMaximoMs = 0): ResumenSesion {
   const lista = conTexto(fragmentos).filter((f) => f.traduccionFinal);
-  const valores = (clave: keyof ReturnType<typeof latencias>) =>
-    lista.map((f) => latencias(f)[clave]).filter((v): v is number => v !== undefined);
+  const completas = lista.filter((f) => !f.colaInterrumpida);
+  const valores = (grupo: Fragmento[], clave: keyof Latencias) =>
+    grupo.map((f) => latencias(f)[clave]).filter((v): v is number => v !== undefined);
   const evaluaciones = lista.flatMap((f) => evaluarGlosario(f.original, f.traduccion, glosario));
   const correctas = evaluaciones.filter((e) => e.correcto).length;
   return {
-    fragmentos: lista.length,
-    latenciaVoz: resumir(valores("voz")),
-    latenciaTexto: resumir(valores("texto")),
-    retrasoCierre: resumir(valores("cierre")),
+    intervenciones: lista.length,
+    cola: resumir(valores(completas, "cola")),
+    colasInterrumpidas: lista.filter((f) => f.colaInterrumpida).length,
+    arranque: resumir(valores(lista, "arranque")),
     retrasoMaximoMs,
     glosario: {
       apariciones: evaluaciones.length,
@@ -70,7 +74,8 @@ function relativos(f: Fragmento, t0: number): Record<string, number | null> {
 }
 
 export function aJSON(datos: DatosSesion): string {
-  const fragmentos = conTexto(datos.fragmentos).map((f) => {
+  const redondo = (v?: number) => (v === undefined ? null : Math.round(v));
+  const intervenciones = conTexto(datos.fragmentos).map((f) => {
     const l = latencias(f);
     return {
       id: f.id,
@@ -78,10 +83,10 @@ export function aJSON(datos: DatosSesion): string {
       hablante: f.hablante,
       original: f.original,
       traduccion: f.traduccion,
-      fin_aproximado: f.finAproximado,
-      latencia_voz_ms: l.voz === undefined ? null : Math.round(l.voz),
-      latencia_texto_ms: l.texto === undefined ? null : Math.round(l.texto),
-      retraso_cierre_ms: l.cierre === undefined ? null : Math.round(l.cierre),
+      cola_ms: redondo(l.cola),
+      cola_interrumpida: f.colaInterrumpida,
+      corte_forzado: f.corteForzado,
+      arranque_ms: redondo(l.arranque),
       marcas_ms: relativos(f, datos.t0),
       glosario: evaluarGlosario(f.original, f.traduccion, datos.glosario),
     };
@@ -96,7 +101,7 @@ export function aJSON(datos: DatosSesion): string {
       configuracion: datos.config,
       resumen: resumirSesion(datos.fragmentos, datos.glosario, datos.retrasoMaximoMs),
       glosario: datos.glosario,
-      fragmentos,
+      intervenciones,
     },
     null,
     2,
@@ -115,10 +120,10 @@ export function aCSV(datos: DatosSesion): string {
     "hablante",
     "original",
     "traduccion",
-    "latencia_voz_ms",
-    "latencia_texto_ms",
-    "retraso_cierre_ms",
-    "fin_aproximado",
+    "cola_ms",
+    "cola_interrumpida",
+    "corte_forzado",
+    "arranque_ms",
     ...MARCAS.map((m) => `${m}_ms`),
     "glosario_correctos",
     "glosario_total",
@@ -133,10 +138,10 @@ export function aCSV(datos: DatosSesion): string {
       f.hablante,
       f.original,
       f.traduccion,
-      l.voz === undefined ? "" : Math.round(l.voz),
-      l.texto === undefined ? "" : Math.round(l.texto),
-      l.cierre === undefined ? "" : Math.round(l.cierre),
-      f.finAproximado ? "si" : "no",
+      l.cola === undefined ? "" : Math.round(l.cola),
+      f.colaInterrumpida ? "si" : "no",
+      f.corteForzado ? "si" : "no",
+      l.arranque === undefined ? "" : Math.round(l.arranque),
       ...MARCAS.map((m) => marcas[m]),
       glosario.filter((g) => g.correcto).length,
       glosario.length,

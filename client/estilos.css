@@ -270,6 +270,19 @@ input[type="number"] {
   margin: 0 0 0 auto;
 }
 
+.medidor {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  column-gap: 1rem;
+}
+
+.medidor-titulo {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+  text-align: right;
+}
+
 .medidor div {
   text-align: right;
 }
@@ -339,8 +352,9 @@ input[type="number"] {
 }
 
 /* Avisos */
+/* Sin display: none: la fila de la grilla del body tiene que seguir existiendo. */
 .avisos:empty {
-  display: none;
+  padding: 0;
 }
 
 .avisos {

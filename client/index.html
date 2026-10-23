@@ -36,11 +36,12 @@
           <span class="punto" aria-hidden="true"></span><span class="texto">Desconectado</span>
         </div>
 
-        <dl class="medidor" aria-label="Latencia de la voz traducida">
+        <dl class="medidor" aria-describedby="medidor-titulo">
+          <div class="medidor-titulo" id="medidor-titulo" title="Cuánto sigue sonando la traducción después de que terminas de hablar">Retraso tras terminar de hablar</div>
           <div><dt>Último</dt><dd id="lat-ultimo">—</dd></div>
           <div><dt>p50</dt><dd id="lat-p50">—</dd></div>
           <div><dt>p95</dt><dd id="lat-p95">—</dd></div>
-          <div><dt>Retraso</dt><dd id="retraso">—</dd></div>
+          <div><dt>Ahora</dt><dd id="retraso">—</dd></div>
         </dl>
       </div>
 
@@ -81,7 +82,10 @@
               <input id="aj-umbral" type="range" min="0.004" max="0.08" step="0.002" value="0.015" />
               <output id="aj-umbral-valor">0.015</output>
             </label>
-            <label>Silencio que cierra un fragmento (ms)
+            <label>Pausa que separa una intervención de la siguiente (ms)
+              <input id="aj-pausa" type="number" min="500" max="5000" step="100" value="1500" />
+            </label>
+            <label>Silencio para que el detector dé la voz por terminada (ms)
               <input id="aj-silencio" type="number" min="150" max="2000" step="50" value="500" />
             </label>
             <label><input id="aj-descarte" type="checkbox" checked /> Saltar la voz atrasada (los subtítulos conservan todo)</label>
