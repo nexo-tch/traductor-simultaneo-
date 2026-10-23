@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Traductor simultáneo para Meet",
+  "version": "0.1.0",
+  "description": "Traduce en vivo (español ↔ inglés) lo que se dice en la reunión: voz traducida y subtítulos en un panel lateral.",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "tabCapture", "offscreen", "sidePanel", "storage"],
+  "host_permissions": ["http://127.0.0.1:5173/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Traducir esta pestaña" },
+  "side_panel": { "default_path": "panel.html" },
+  "commands": {
+    "alternar-voz": {
+      "suggested_key": { "default": "Alt+Shift+T" },
+      "description": "Encender o apagar la voz traducida"
+    }
+  }
+}

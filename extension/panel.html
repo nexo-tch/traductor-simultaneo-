@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Traductor</title>
+    <link rel="stylesheet" href="./panel.css" />
+  </head>
+  <body>
+    <header class="barra">
+      <div class="fila">
+        <button id="btn-empezar" class="principal" type="button">Empezar</button>
+        <span id="estado" class="estado" data-estado="desconectado"><span class="punto"></span><span class="texto">Detenido</span></span>
+        <span class="retraso" title="Cuánto va atrasada la voz traducida">Retraso <strong id="retraso">—</strong></span>
+      </div>
+      <div class="fila">
+        <label>Traducir a
+          <select id="destino">
+            <option value="es">Español</option>
+            <option value="en">Inglés</option>
+          </select>
+        </label>
+        <button id="btn-voz" class="interruptor" type="button" aria-pressed="true" title="Alt+Shift+T">Voz traducida: <strong>encendida</strong></button>
+      </div>
+      <details>
+        <summary>Volumen y vista</summary>
+        <label>Voz traducida <input id="vol-voz" type="range" min="0" max="1" step="0.05" /></label>
+        <label>Reunión (original) <input id="vol-original" type="range" min="0" max="1" step="0.05" /></label>
+        <label><input id="ducking" type="checkbox" /> Bajar la reunión mientras suena la traducción</label>
+        <label>Vista
+          <select id="vista">
+            <option value="ambos">Original y traducción</option>
+            <option value="traduccion">Solo traducción</option>
+          </select>
+        </label>
+        <button id="btn-limpiar" type="button">Limpiar transcripción</button>
+      </details>
+    </header>
+    <div id="avisos" class="avisos" aria-live="polite"></div>
+    <main id="contenedor">
+      <p id="vacio" class="vacio">
+        Abre la reunión de Meet, haz clic en el ícono de la extensión y pulsa <strong>Empezar</strong>.
+        Se traduce a tu idioma lo que se diga en el otro; lo que ya está en tu idioma solo se transcribe.
+        Usa audífonos.
+      </p>
+      <ol id="lista" class="lista"></ol>
+    </main>
+    <footer class="pie">El audio de la reunión se envía a Google (Gemini) para traducirlo. No se guarda.</footer>
+    <script type="module" src="./panel.ts"></script>
+  </body>
+</html>

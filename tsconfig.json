@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"],
+    "types": ["node", "vite/client", "chrome"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -13,5 +13,5 @@
     "esModuleInterop": true,
     "noEmit": true
   },
-  "include": ["server", "client", "vite.config.ts"]
+  "include": ["server", "client", "extension", "vite.config.ts", "vite.extension.config.ts"]
 }

@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false server/index.ts",
     "build": "vite build",
+    "build:extension": "vite build --config vite.extension.config.ts",
+    "dev:extension": "vite build --config vite.extension.config.ts --watch",
     "start": "tsx server/index.ts --produccion",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -21,6 +23,7 @@
     "express": "^5.3.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.3.5",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
     "tsx": "^4.23.15",
