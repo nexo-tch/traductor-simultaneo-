@@ -30,7 +30,7 @@ function apiKey(proveedor: string): string {
 
 const app = express();
 app.disable("x-powered-by");
-// Detrás del proxy de la plataforma (Render): la IP real viene en X-Forwarded-For.
+// Detrás del proxy de la plataforma (Railway): la IP real viene en X-Forwarded-For.
 if (host !== "127.0.0.1") app.set("trust proxy", 1);
 app.use(corsExtension);
 app.use(express.json({ limit: "16kb" }));
