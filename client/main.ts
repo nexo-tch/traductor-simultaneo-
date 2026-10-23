@@ -3,7 +3,7 @@ import { archivoDePrueba, ErrorCaptura, microfono, type Fuente } from "./audio/c
 import { DetectorActividad } from "./audio/detector";
 import { VozTraducida } from "./audio/voz";
 import { formatoSegundos } from "./metrics/estadisticas";
-import { aCSV, aJSON, descargar, resumirSesion, type DatosSesion } from "./metrics/exportar";
+import { aCSV, aJSON, descargar, resumirSesion, type DatosSesion, type EventoCrudo } from "./metrics/exportar";
 import { CONFIG_REGISTRO, RegistroSesion } from "./metrics/registro";
 import { PROVEEDORES } from "./providers";
 import type { EstadoConexion, EventoProveedor, Idioma, ProveedorTraduccion } from "./providers/tipos";
@@ -70,6 +70,8 @@ let registro = nuevoRegistro();
 let t0: number | null = null;
 let inicio = Date.now();
 let retrasoMaximo = 0;
+/** Eventos de texto tal como llegan del proveedor, para diagnóstico en la exportación. */
+let eventosTexto: EventoCrudo[] = [];
 let apiKeyConfigurada = true;
 
 function nuevoRegistro(): RegistroSesion {
@@ -259,6 +261,10 @@ async function empezar(): Promise<void> {
 
 function manejarEvento(actual: Sesion, evento: EventoProveedor): void {
   if (sesion !== actual) return;
+  if (evento.tipo === "transcripcion_parcial" || evento.tipo === "traduccion_parcial" || evento.tipo === "diagnostico") {
+    const texto = evento.tipo === "diagnostico" ? `${evento.nombre}: ${evento.muestra}` : evento.texto;
+    eventosTexto.push({ t: Math.round(evento.t - (t0 ?? 0)), tipo: evento.tipo, texto });
+  }
   switch (evento.tipo) {
     case "transcripcion_parcial":
     case "transcripcion_final":
@@ -334,6 +340,7 @@ function datosSesion(): DatosSesion {
     fragmentos: registro.fragmentos,
     glosario: glosario.activos(),
     retrasoMaximoMs: Math.round(retrasoMaximo),
+    eventos: eventosTexto,
     config: {
       umbralVoz: Number(ui.umbral.value),
       silencioMs: Number(ui.silencio.value),
@@ -377,6 +384,7 @@ ui.limpiar.addEventListener("click", () => {
   t0 = sesion ? performance.now() : null;
   inicio = Date.now();
   retrasoMaximo = 0;
+  eventosTexto = [];
   panel.limpiar();
   render();
 });

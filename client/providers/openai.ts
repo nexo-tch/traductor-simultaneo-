@@ -201,6 +201,7 @@ export class ProveedorOpenAI implements ProveedorTraduccion {
         if (evento.type && !this.tiposVistos.has(evento.type)) {
           this.tiposVistos.add(evento.type);
           console.debug("[openai] evento", evento.type);
+          this.emitir({ tipo: "diagnostico", nombre: evento.type, muestra: datos.slice(0, 500), t });
         }
     }
   }

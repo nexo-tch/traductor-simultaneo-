@@ -19,7 +19,9 @@ export type EventoProveedor =
   | { tipo: "traduccion_final"; texto: string; t: number; idFragmento: string }
   | { tipo: "audio_traducido"; pista: MediaStream; t: number }
   | { tipo: "estado_conexion"; estado: EstadoConexion; detalle?: string; t: number }
-  | { tipo: "error"; codigo: string; mensaje: string; recuperable: boolean; t: number };
+  | { tipo: "error"; codigo: string; mensaje: string; recuperable: boolean; t: number }
+  /** Evento del proveedor que la app no usa: se guarda para diagnóstico (primera aparición de cada tipo). */
+  | { tipo: "diagnostico"; nombre: string; muestra: string; t: number };
 
 export interface OpcionesConexion {
   entrada: MediaStream;

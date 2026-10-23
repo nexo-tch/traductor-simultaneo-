@@ -14,6 +14,13 @@ const MARCAS = [
   "t_fin_audio_traducido",
 ] as const;
 
+export interface EventoCrudo {
+  /** ms desde el inicio de la sesión */
+  t: number;
+  tipo: string;
+  texto: string;
+}
+
 export interface DatosSesion {
   proveedor: string;
   direccion: string;
@@ -24,6 +31,7 @@ export interface DatosSesion {
   fragmentos: Fragmento[];
   glosario: TerminoGlosario[];
   retrasoMaximoMs: number;
+  eventos: EventoCrudo[];
   config: Record<string, unknown>;
 }
 
@@ -102,6 +110,7 @@ export function aJSON(datos: DatosSesion): string {
       resumen: resumirSesion(datos.fragmentos, datos.glosario, datos.retrasoMaximoMs),
       glosario: datos.glosario,
       intervenciones,
+      eventos: datos.eventos,
     },
     null,
     2,
