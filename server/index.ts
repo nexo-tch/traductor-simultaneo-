@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { crearSecretoCliente, ErrorProveedor, esIdioma, type Idioma } from "./openai.js";
+import { crearSesionGemini } from "./gemini.js";
 import { crearSesionSoniox, listarVoces } from "./soniox.js";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,7 +17,7 @@ const idiomaOrigen: Idioma = esIdioma(process.env.SOURCE_LANG) ? process.env.SOU
 const idiomaDestino: Idioma = esIdioma(process.env.TARGET_LANG) ? process.env.TARGET_LANG : "en";
 
 /** Variable de entorno con la key de cada proveedor. Se leen en cada pedido, nunca se envían al navegador. */
-const KEYS: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY" };
+const KEYS: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY", gemini: "GEMINI_API_KEY" };
 
 function apiKey(proveedor: string): string {
   return (process.env[KEYS[proveedor]] ?? "").trim();
@@ -59,7 +60,9 @@ app.post("/api/sesion", async (req, res) => {
     res.json(
       proveedor === "soniox"
         ? await crearSesionSoniox(key, destino, process.env.SONIOX_VOICE?.trim())
-        : await crearSecretoCliente(key, destino),
+        : proveedor === "gemini"
+          ? await crearSesionGemini(key, destino)
+          : await crearSecretoCliente(key, destino),
     );
   } catch (error) {
     if (error instanceof ErrorProveedor) {

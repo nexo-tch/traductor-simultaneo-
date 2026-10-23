@@ -555,7 +555,7 @@ for (const [id, { nombre }] of Object.entries(PROVEEDORES)) {
   ui.proveedor.add(new Option(nombre, id));
 }
 
-const VARIABLE_KEY: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY" };
+const VARIABLE_KEY: Record<string, string> = { openai: "OPENAI_API_KEY", soniox: "SONIOX_API_KEY", gemini: "GEMINI_API_KEY" };
 let keys: Record<string, boolean> = {};
 
 /** Ajusta la interfaz al proveedor elegido: key disponible, notas del glosario y de la voz. */

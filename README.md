@@ -7,11 +7,12 @@ La especificación completa está en [`SPEC.md`](SPEC.md). Hay dos proveedores, 
 | Proveedor | Cómo funciona | Glosario | Cuándo usarlo |
 | --- | --- | --- | --- |
 | **OpenAI `gpt-realtime-translate`** | Un solo modelo de voz a voz por WebRTC. Espera a tener la idea completa antes de hablar (en las pruebas, unos 3–5 s). | No lo acepta: solo corrige subtítulos. | Traducción más pulida; presentaciones largas. |
+| **Google Gemini Live Translate** (`gemini-3.5-live-translate-preview`) | El modelo de traducción de Google Meet, de voz a voz por WebSocket. Conserva la entonación de quien habla. En vista previa. | No lo acepta: solo corrige subtítulos. | Candidato a la voz más natural (ver `docs/INVESTIGACION.md`). |
 | **Soniox** (`stt-rt-v5` + `tts-rt-v2`) | Transcribe y traduce palabra por palabra; cada pedazo traducido se manda a la voz apenas se confirma. | Sí: se envía como términos de traducción. | Conversación más simultánea. |
 
 ## Instalación (menos de 10 minutos)
 
-Necesitas Node.js 20 o superior, Google Chrome, audífonos y la API key de al menos un proveedor: OpenAI (con $5–10 de saldo alcanza para todas las pruebas) y/o Soniox.
+Necesitas Node.js 20 o superior, Google Chrome, audífonos y la API key de al menos un proveedor: OpenAI (con $5–10 de saldo alcanza para todas las pruebas), Soniox o Google (Gemini).
 
 ```bash
 git clone https://github.com/nexo-tch/traductor-simultaneo-.git
@@ -20,7 +21,7 @@ npm install
 cp .env.example .env        # en Windows: copy .env.example .env
 ```
 
-Abre `.env` (en la Mac: `open -e .env`) y pega tus keys después de `OPENAI_API_KEY=` y/o `SONIOX_API_KEY=`. Las keys se quedan en tu computador: el navegador nunca las ve; solo recibe llaves temporales. `PROVIDER` elige el proveedor que aparece seleccionado al abrir la página.
+Abre `.env` (en la Mac: `open -e .env`) y pega tus keys después de `OPENAI_API_KEY=`, `SONIOX_API_KEY=` y/o `GEMINI_API_KEY=` (de aistudio.google.com). Las keys se quedan en tu computador: el navegador nunca las ve; solo recibe llaves temporales. `PROVIDER` elige el proveedor que aparece seleccionado al abrir la página.
 
 ```bash
 npm run dev
@@ -132,6 +133,11 @@ Desviaciones de `SPEC.md` y su motivo:
       - Sin cortes por pausa, Soniox deja las últimas palabras sin confirmar hasta que se vuelve a hablar: en una prueba, el final del audio nunca se tradujo. Por eso, si la cola sin confirmar no cambia en 1.6 s, se le pide a Soniox que la confirme (`finalize`). Con 0.9 s volvían los puntos falsos: algunas pausas a mitad de frase duran eso.
 13. **Cada tanda confirmada es una frase de voz cerrada.** En una prueba real, la voz de Soniox (`tts-rt-v2`) no hablaba un texto hasta recibir el siguiente o el cierre de la frase: esperaba de 3.5 a 5.4 s, y con la frase abierta sin producir audio Soniox la cortaba (error 408, *«output audio rate below minimum»*). Por eso cada tanda que confirma Soniox (6–9 palabras en las pruebas, frases naturales) se manda como frase propia y se cierra en el acto; las frases suenan en orden. Si la persona sigue hablando, un punto al final de la tanda se lee como coma (*Ajustes*) para que la voz no baje la entonación como en un final de oración.
     - Se probó también hablar las palabras provisionales antes de la confirmación (prefijo estable, SPEC 8.2), pero Soniox no manda traducción provisional: solo tandas confirmadas. Se quitó la opción.
+17. **Gemini Live Translate** (`client/providers/gemini.ts`, `server/gemini.ts`), con el SDK oficial `@google/genai` 2.28.0 (la versión más reciente con más de dos semanas). Detalles:
+    - El servidor crea un token efímero de un solo uso (`authTokens.create`, API `v1alpha`), con la configuración bloqueada: modelo, `translationConfig.targetLanguageCode`, transcripción de entrada y de salida.
+    - El navegador manda PCM de 16 kHz en pedazos de 100 ms (`client/audio/pcm.ts`, con un `AudioWorklet`) y recibe voz en PCM de 24 kHz, que suena por la misma cola que Soniox.
+    - El modelo se cambia con `GEMINI_TRANSLATE_MODEL` en `.env`.
+    - Como el modelo está en vista previa y su web no era accesible al construirlo, el JSON registra la primera aparición de cada campo que manda Google (`gemini_campo:…`) y cada vez que la voz retoma tras un hueco (`gemini_voz_retoma`), para ajustar con datos reales.
 15. **El detector de voz se calibra con el ruido de fondo**: el umbral es el mayor entre la sensibilidad de *Ajustes* y el doble del ruido medido (percentil 20 de los últimos 6 s). Con la nota de WhatsApp, el umbral fijo quedaba al nivel del ruido y no se detectaba ninguna pausa.
 16. **Diagnóstico de la voz** en `eventos` del JSON: cuándo crece la traducción provisional (`traduccion_provisional`), qué texto va a la voz y cuándo (`a_la_voz#N`), cuándo empieza a sonar cada frase de voz y cuánto audio había en cola (`voz_primer_audio#N`) y cuándo termina (`voz_fin#N`).
 14. **Original de fondo con *ducking*** (SPEC 8.1), solo en el modo audio de prueba: el original suena al volumen de *Ajustes* (45% por defecto) y baja al 40% de ese valor (~18%) mientras suena la traducción, con transiciones de 60 ms. Así se oye como lo oiría quien escucha la interpretación. Con micrófono no aplica: quien habla oye su propia voz.
