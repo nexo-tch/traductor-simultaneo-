@@ -60,7 +60,9 @@ details { color: var(--tenue); }
 details[open] { display: grid; gap: 8px; }
 summary { cursor: pointer; }
 details label { display: flex; align-items: center; gap: 8px; }
-details input[type="range"] { flex: 1; }
+details input[type="range"], details input[type="url"], details input[type="password"] { flex: 1; min-width: 0; }
+details input[type="url"], details input[type="password"] { background: var(--superficie); border: 1px solid var(--borde); border-radius: 6px; padding: 4px 6px; }
+.nota { margin: 0; font-size: 12px; }
 .medidor { color: var(--tenue); font-size: 13px; }
 .medidor meter { flex: 1; height: 10px; }
 pre { margin: 0; max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: var(--superficie); border-radius: 6px; padding: 6px; }

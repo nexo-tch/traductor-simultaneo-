@@ -86,8 +86,14 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private separarEntrada = false;
   private separarSalida = false;
 
-  /** `servidor`: dirección del servidor local de tokens; vacío = el mismo origen (el probador). */
-  constructor(private readonly servidor = "") {}
+  /**
+   * `servidor`: dirección del servidor de tokens; vacío = el mismo origen (el probador).
+   * `codigo`: código de acceso, si el servidor está publicado en internet.
+   */
+  constructor(
+    private readonly servidor = "",
+    private readonly codigo = "",
+  ) {}
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -178,16 +184,22 @@ export class ProveedorGemini implements ProveedorTraduccion {
     try {
       respuesta = await fetch(`${this.servidor}/api/sesion`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(this.codigo ? { "X-Codigo-Acceso": this.codigo } : {}) },
         body: JSON.stringify({ proveedor: "gemini", idiomaDestino }),
       });
     } catch {
-      throw new ErrorConexion("No hay conexión con el servidor local. ¿Sigue corriendo `npm run dev`?", "sin_servidor", true);
+      throw new ErrorConexion(
+        this.servidor && !this.servidor.includes("127.0.0.1")
+          ? `No hay conexión con el servidor de traducción (${this.servidor}). Revisa la dirección en Conexión o tu internet.`
+          : "No hay conexión con el servidor local. ¿Sigue corriendo `npm run dev`?",
+        "sin_servidor",
+        true,
+      );
     }
     const cuerpo = (await respuesta.json().catch(() => ({}))) as Partial<RespuestaSesion> & { codigo?: string; mensaje?: string };
     if (!respuesta.ok || !cuerpo.token || !cuerpo.modelo) {
       const codigo = cuerpo.codigo ?? "error_sesion";
-      const recuperable = !["sin_key", "key_invalida", "sin_saldo", "idioma_invalido", "proveedor_invalido"].includes(codigo);
+      const recuperable = !["sin_key", "key_invalida", "sin_saldo", "idioma_invalido", "proveedor_invalido", "codigo_invalido"].includes(codigo);
       throw new ErrorConexion(cuerpo.mensaje ?? `El servidor local respondió ${respuesta.status}.`, codigo, recuperable);
     }
     return cuerpo as RespuestaSesion;

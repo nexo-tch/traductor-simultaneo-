@@ -12,6 +12,7 @@
     "build": "vite build",
     "build:extension": "vite build --config vite.extension.config.ts",
     "dev:extension": "vite build --config vite.extension.config.ts --watch",
+    "zip:extension": "npm run build:extension && cd dist/extension && rm -f ../traductor-extension.zip && zip -qr ../traductor-extension.zip .",
     "start": "tsx server/index.ts --produccion",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -7,8 +7,6 @@ import { AJUSTES_VOZ, type EstadoConexion, type EventoProveedor, type Idioma } f
 import { AJUSTES, enviar, type Ajustes, type AlDocumento, type Foto } from "./mensajes";
 import { Transcripcion } from "./transcripcion";
 
-/** Servidor local de tokens (npm run dev). Tiene que coincidir con host_permissions del manifest. */
-const SERVIDOR = "http://127.0.0.1:5173";
 /** Mientras suena la traducción, la reunión baja a este factor de su volumen. */
 const FACTOR_DUCKING = 0.25;
 
@@ -102,7 +100,8 @@ async function iniciar(streamId: string, nuevos: Ajustes, tituloPestana: string)
   voz.connect(contexto.destination);
 
   anotar(`Pestaña capturada: «${titulo}» (${flujo.getAudioTracks().length} pista(s) de audio)`);
-  const proveedor = new ProveedorGemini(SERVIDOR);
+  const proveedor = new ProveedorGemini(ajustes.servidor, ajustes.codigo);
+  anotar(`Servidor: ${ajustes.servidor}${ajustes.codigo ? " (con código)" : ""}`);
   const entrada = new DetectorActividad(contexto, flujo, { umbral: 0.01, silencioMs: 500 }, () => {});
   const actual: Sesion = { flujo, contexto, original, voz, proveedor, entrada, inicio: performance.now(), tick: 0 };
   sesion = actual;

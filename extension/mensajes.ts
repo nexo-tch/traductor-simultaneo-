@@ -14,7 +14,14 @@ export interface Ajustes {
   /** Bajar la reunión mientras suena la traducción. */
   ducking: boolean;
   vista: "ambos" | "traduccion";
+  /** Servidor que guarda la API key y entrega los tokens de Gemini. */
+  servidor: string;
+  /** Código de acceso del servidor (si está publicado en internet). */
+  codigo: string;
 }
+
+/** Se fija al construir: VITE_SERVIDOR=https://… npm run build:extension. Sin ella, el servidor local. */
+const SERVIDOR_POR_DEFECTO = (import.meta.env.VITE_SERVIDOR as string | undefined)?.replace(/\/+$/, "") || "http://127.0.0.1:5173";
 
 export const AJUSTES: Ajustes = {
   destino: "es",
@@ -23,6 +30,8 @@ export const AJUSTES: Ajustes = {
   volumenOriginal: 1,
   ducking: true,
   vista: "ambos",
+  servidor: SERVIDOR_POR_DEFECTO,
+  codigo: "",
 };
 
 export async function leerAjustes(): Promise<Ajustes> {

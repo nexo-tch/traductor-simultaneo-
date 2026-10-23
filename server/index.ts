@@ -7,10 +7,15 @@ import express from "express";
 import { crearSecretoCliente, ErrorProveedor, esIdioma, type Idioma } from "./openai.js";
 import { crearSesionGemini } from "./gemini.js";
 import { crearSesionSoniox, listarVoces } from "./soniox.js";
+import { corsExtension, exigirCodigo, LimitePorIp, limitar } from "./acceso.js";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const produccion = process.argv.includes("--produccion") || process.env.NODE_ENV === "production";
 const puerto = Number(process.env.PORT) || 5173;
+/** En local solo escucha en esta máquina; en un servidor publicado, HOST=0.0.0.0. */
+const host = process.env.HOST?.trim() || "127.0.0.1";
+/** Si está definido, /api/sesion exige este código (cabecera X-Codigo-Acceso). Obligatorio al publicar. */
+const codigoAcceso = process.env.CODIGO_ACCESO?.trim() ?? "";
 
 const proveedorPorDefecto = process.env.PROVIDER || "openai";
 const idiomaOrigen: Idioma = esIdioma(process.env.SOURCE_LANG) ? process.env.SOURCE_LANG : "es";
@@ -25,6 +30,9 @@ function apiKey(proveedor: string): string {
 
 const app = express();
 app.disable("x-powered-by");
+// Detrás del proxy de la plataforma (Render): la IP real viene en X-Forwarded-For.
+if (host !== "127.0.0.1") app.set("trust proxy", 1);
+app.use(corsExtension);
 app.use(express.json({ limit: "16kb" }));
 
 app.get("/api/config", (_req, res) => {
@@ -36,7 +44,7 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-app.post("/api/sesion", async (req, res) => {
+app.post("/api/sesion", limitar(new LimitePorIp(20, 60000)), exigirCodigo(codigoAcceso), async (req, res) => {
   const proveedor: unknown = req.body?.proveedor ?? "openai";
   const destino: unknown = req.body?.idiomaDestino;
   if (typeof proveedor !== "string" || !KEYS[proveedor]) {
@@ -103,8 +111,13 @@ if (produccion) {
   app.use(vite.middlewares);
 }
 
-app.listen(puerto, "127.0.0.1", () => {
-  console.log(`Probador de fluidez en http://localhost:${puerto}`);
+if (host !== "127.0.0.1" && !codigoAcceso) {
+  console.error("Falta CODIGO_ACCESO: sin él, cualquiera en internet podría gastar tu API key. El servidor no arranca.");
+  process.exit(1);
+}
+
+app.listen(puerto, host, () => {
+  console.log(host === "127.0.0.1" ? `Probador de fluidez en http://localhost:${puerto}` : `Servidor escuchando en ${host}:${puerto}`);
   const faltan = Object.entries(KEYS).filter(([p]) => !apiKey(p)).map(([, v]) => v);
   if (faltan.length) console.log(`Aviso: falta ${faltan.join(" y ")} en .env (ese proveedor no estará disponible).`);
 });

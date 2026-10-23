@@ -23,6 +23,9 @@ const ui = {
   nivel: $<HTMLMeterElement>("nivel"),
   registro: $<HTMLPreElement>("registro"),
   copiar: $<HTMLButtonElement>("btn-copiar"),
+  servidor: $<HTMLInputElement>("servidor"),
+  codigo: $<HTMLInputElement>("codigo"),
+  conexion: $<HTMLDetailsElement>("conexion"),
 };
 
 const TEXTO_ESTADO: Record<EstadoConexion, string> = {
@@ -50,6 +53,8 @@ function mostrarAjustes(a: Ajustes): void {
   ui.ducking.checked = a.ducking;
   ui.vista.value = a.vista;
   ui.lista.dataset.vista = a.vista;
+  ui.servidor.value = a.servidor;
+  ui.codigo.value = a.codigo;
 }
 
 async function cambiar(parcial: Partial<Ajustes>): Promise<void> {
@@ -68,6 +73,9 @@ ui.volVoz.addEventListener("input", () => void cambiar({ volumenVoz: Number(ui.v
 ui.volOriginal.addEventListener("input", () => void cambiar({ volumenOriginal: Number(ui.volOriginal.value) }));
 ui.ducking.addEventListener("change", () => void cambiar({ ducking: ui.ducking.checked }));
 ui.vista.addEventListener("change", () => void cambiar({ vista: ui.vista.value === "traduccion" ? "traduccion" : "ambos" }));
+
+ui.servidor.addEventListener("change", () => void cambiar({ servidor: ui.servidor.value.trim().replace(/\/+$/, "") }));
+ui.codigo.addEventListener("change", () => void cambiar({ codigo: ui.codigo.value.trim() }));
 
 ui.empezar.addEventListener("click", async () => {
   ui.avisos.replaceChildren();
@@ -178,6 +186,8 @@ async function arrancar(): Promise<void> {
   $("version").textContent = `Versión ${chrome.runtime.getManifest().version}`;
   ajustes = await leerAjustes();
   mostrarAjustes(ajustes);
+  // Con un servidor publicado hace falta el código: se abre la sección para que lo pongan.
+  if (!ajustes.servidor.includes("127.0.0.1") && !ajustes.codigo) ui.conexion.open = true;
   // Si el panel se abre con una traducción en curso, se trae lo que ya hay.
   const foto = await enviar<Foto>({ para: "documento", tipo: "foto" });
   if (foto?.entradas) {
