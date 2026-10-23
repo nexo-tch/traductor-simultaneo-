@@ -28,11 +28,10 @@ const PONERSE_AL_DIA_MS = 6000;
 const PAUSA_TRAS_SALTO_MS = 10000;
 /**
  * Con "avisar en cada pausa": tras este silencio se manda audioStreamEnd para que Google
- * traduzca lo pendiente sin esperar más audio. Mientras dure la pausa no se manda audio
- * (mandar audio reabre el flujo); al volver la voz se mandan antes los últimos 300 ms.
+ * traduzca lo pendiente sin esperar más audio. El audio (silencio) se sigue mandando:
+ * cuando se dejaba de mandar, Google a veces no entregaba las últimas palabras.
  */
 const FIN_TRAS_SILENCIO_MS = 700;
-const PEDAZOS_PREVIOS = 3;
 
 interface RespuestaSesion {
   token: string;
@@ -86,7 +85,6 @@ export class ProveedorGemini implements ProveedorTraduccion {
   /** La primera frase de una sesión nueva llega sin espacio inicial: se agrega para no pegarla a la anterior. */
   private separarEntrada = false;
   private separarSalida = false;
-  private previos: string[] = [];
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -195,24 +193,14 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private alCapturar(pcm: Int16Array): void {
     const t = performance.now();
     const datos = aBase64(new Uint8Array(pcm.buffer));
+    this.enviar(datos);
     if (this.hayVoz(pcm)) {
       this.ultimaVozEnviada = t;
-      if (this.enPausa) {
-        this.enPausa = false;
-        for (const previo of this.previos) this.enviar(previo);
-        this.previos = [];
-      }
-      this.enviar(datos);
+      this.enPausa = false;
       return;
     }
-    if (this.enPausa) {
-      this.previos.push(datos);
-      if (this.previos.length > PEDAZOS_PREVIOS) this.previos.shift();
-      return;
-    }
-    this.enviar(datos);
     const sesion = this.sesionLista;
-    if (this.opciones?.cerrarEnPausas && sesion && sesion === this.sesion && this.ultimaVozEnviada && t - this.ultimaVozEnviada >= FIN_TRAS_SILENCIO_MS) {
+    if (!this.enPausa && this.opciones?.cerrarEnPausas && sesion && sesion === this.sesion && this.ultimaVozEnviada && t - this.ultimaVozEnviada >= FIN_TRAS_SILENCIO_MS) {
       this.enPausa = true;
       sesion.sendRealtimeInput({ audioStreamEnd: true });
       this.emitir({ tipo: "diagnostico", nombre: "gemini_fin_de_audio", muestra: `pausa de ${Math.round(t - this.ultimaVozEnviada)} ms`, t });
@@ -298,7 +286,6 @@ export class ProveedorGemini implements ProveedorTraduccion {
     }
     this.sesionLista = null;
     this.enPausa = false;
-    this.previos = [];
     window.clearInterval(this.vigilancia);
     const sesion = this.sesion;
     this.sesion = null;
