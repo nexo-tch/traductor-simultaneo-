@@ -45,6 +45,37 @@ interface Tramo {
   terminado: boolean;
 }
 
+type Pieza = "sesión" | "transcripción" | "voz";
+
+/** Convierte un error del SDK en un mensaje claro, conservando lo que respondió Soniox. */
+function traducirError(error: unknown, pieza: Pieza): ErrorConexion {
+  const detalle = error instanceof Error ? error.message : String(error);
+  const codigo = (error as { statusCode?: number }).statusCode;
+  const original = `(Soniox, ${pieza}${codigo ? `, código ${codigo}` : ""}: «${detalle}»)`;
+  if (error instanceof AuthError) {
+    return new ErrorConexion(
+      `Soniox rechazó la llave. Revisa SONIOX_API_KEY en el archivo .env y reinicia el servidor. ${original}`,
+      "key_invalida",
+      false,
+    );
+  }
+  if (error instanceof QuotaError && codigo === 402) {
+    return new ErrorConexion(
+      `La cuenta de Soniox no tiene saldo. Agrega crédito o un medio de pago en console.soniox.com. ${original}`,
+      "sin_saldo",
+      false,
+    );
+  }
+  if (error instanceof QuotaError) {
+    return new ErrorConexion(
+      `Soniox rechazó la conexión por límite de uso o de conexiones simultáneas. Espera un minuto y vuelve a intentar; si se repite, revisa los límites de tu cuenta en console.soniox.com. ${original}`,
+      "limite_uso",
+      false,
+    );
+  }
+  return new ErrorConexion(`Error de Soniox. ${original}`, "conexion", true);
+}
+
 class ErrorConexion extends Error {
   constructor(
     mensaje: string,
@@ -109,20 +140,23 @@ export class ProveedorSoniox implements ProveedorTraduccion {
 
   private async abrir(): Promise<void> {
     if (!this.opciones) return;
+    let pieza: Pieza = "sesión";
     try {
       const sesion = await this.pedirSesion(this.opciones.idiomaDestino);
       if (!this.activo) return;
 
+      pieza = "transcripción";
       const stt = new RealtimeSttSession(sesion.llaveStt, URL_STT, this.configStt(sesion.modeloStt));
       stt.on("result", (r) => this.procesar(r));
       stt.on("endpoint", () => this.cerrarFrase());
-      stt.on("error", (e) => this.fallo(e));
+      stt.on("error", (e) => this.fallo(e, "transcripción"));
       stt.on("disconnected", () => {
         if (this.activo && this.stt === stt) this.programarReconexion("Se perdió la conexión con Soniox");
       });
       this.stt = stt;
       await stt.connect();
 
+      pieza = "voz";
       const tts = new RealtimeTtsConnection(sesion.llaveTts, URL_TTS, {
         model: sesion.modeloTts,
         language: this.opciones.idiomaDestino,
@@ -130,7 +164,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
         audio_format: "pcm_s16le",
         sample_rate: FRECUENCIA,
       });
-      tts.on("error", (e) => this.fallo(e));
+      tts.on("error", (e) => this.fallo(e, "voz"));
       this.tts = tts;
       await tts.connect();
       if (!this.activo) return;
@@ -139,7 +173,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       this.reintentos = 0;
       this.emitirEstado("conectado");
     } catch (error) {
-      this.fallo(error);
+      this.fallo(error, pieza);
     }
   }
 
@@ -226,20 +260,9 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     this.provisionalTraduccion = "";
   }
 
-  private fallo(error: unknown): void {
+  private fallo(error: unknown, pieza: Pieza = "sesión"): void {
     if (!this.activo) return;
-    const e =
-      error instanceof ErrorConexion
-        ? error
-        : error instanceof AuthError
-          ? new ErrorConexion(
-              "Soniox rechazó la llave. Revisa SONIOX_API_KEY en el archivo .env y reinicia el servidor.",
-              "key_invalida",
-              false,
-            )
-          : error instanceof QuotaError
-            ? new ErrorConexion("La cuenta de Soniox no tiene saldo o llegó a su límite de uso.", "sin_saldo", false)
-            : new ErrorConexion(`Soniox: ${error instanceof Error ? error.message : String(error)}`, "conexion", true);
+    const e = error instanceof ErrorConexion ? error : traducirError(error, pieza);
     if (e.recuperable && this.reintentos < MAX_REINTENTOS) {
       this.programarReconexion(e.message);
       return;
@@ -342,7 +365,9 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     stream.on("terminated", terminar);
     stream.on("error", (error) => {
       terminar();
-      this.emitir({ tipo: "error", codigo: "voz", mensaje: `Voz de Soniox: ${error.message}`, recuperable: true, t: performance.now() });
+      // Sin voz, los subtítulos siguen: se avisa pero no se corta la sesión.
+      const e = traducirError(error, "voz");
+      this.emitir({ tipo: "error", codigo: e.codigo, mensaje: e.message, recuperable: true, t: performance.now() });
     });
     return tramo;
   }
