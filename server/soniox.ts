@@ -66,20 +66,40 @@ async function llaveTemporal(apiKey: string, uso: "transcribe_websocket" | "tts_
 interface ModeloTts {
   id: string;
   languages?: { code: string }[];
-  voices?: { id: string }[];
+  voices?: { id: string; description?: string; gender?: string }[];
 }
 
-let vocesEnCache: ModeloTts[] | null = null;
+let modelosEnCache: ModeloTts[] | null = null;
+
+async function modelos(apiKey: string): Promise<ModeloTts[]> {
+  modelosEnCache ??= ((await pedir(apiKey, "/v1/tts-models")) as { models?: ModeloTts[] }).models ?? [];
+  return modelosEnCache;
+}
+
+function modeloPara(lista: ModeloTts[], idioma: Idioma): ModeloTts | undefined {
+  return lista.find((m) => m.id === MODELO_TTS) ?? lista.find((m) => m.languages?.some((l) => l.code === idioma));
+}
+
+export interface Voz {
+  id: string;
+  descripcion: string;
+  genero: string;
+}
+
+/** Voces del modelo de voz, para el selector de Ajustes. */
+export async function listarVoces(apiKey: string, idioma: Idioma): Promise<Voz[]> {
+  const modelo = modeloPara(await modelos(apiKey), idioma);
+  return (modelo?.voices ?? []).map((v) => ({ id: v.id, descripcion: v.description ?? "", genero: v.gender ?? "" }));
+}
 
 /** Elige la voz: la de SONIOX_VOICE si existe, si no "Adrian" (la del ejemplo oficial), si no la primera del modelo. */
 async function elegirVoz(apiKey: string, idioma: Idioma, preferida?: string): Promise<string> {
+  let voces: string[] = [];
   try {
-    vocesEnCache ??= ((await pedir(apiKey, "/v1/tts-models")) as { models?: ModeloTts[] }).models ?? [];
+    voces = (await listarVoces(apiKey, idioma)).map((v) => v.id);
   } catch {
     return preferida || VOZ_PREFERIDA;
   }
-  const modelo = vocesEnCache.find((m) => m.id === MODELO_TTS) ?? vocesEnCache.find((m) => m.languages?.some((l) => l.code === idioma));
-  const voces = modelo?.voices?.map((v) => v.id) ?? [];
   if (preferida && voces.includes(preferida)) return preferida;
   if (voces.includes(VOZ_PREFERIDA)) return VOZ_PREFERIDA;
   return voces[0] ?? preferida ?? VOZ_PREFERIDA;

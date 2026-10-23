@@ -29,11 +29,28 @@ export type EventoProveedor =
   /** Evento del proveedor que la app no usa: se guarda para diagnóstico (primera aparición de cada tipo). */
   | { tipo: "diagnostico"; nombre: string; muestra: string; t: number };
 
+/** Ajustes de la voz traducida para proveedores que la generan aparte (Soniox). */
+export interface AjustesVoz {
+  /** Velocidad base, de 0.7 a 1.3. */
+  velocidad: number;
+  /** Acorta los silencios entre palabras. */
+  reducirSilencios: boolean;
+  /** Voz del proveedor; vacío = la que elija el servidor. */
+  voz: string;
+  /** "palabra": cada pedazo confirmado va a la voz al instante. "frase": se junta hasta una coma o 5 palabras (más natural, algo más lento). */
+  envio: "palabra" | "frase";
+  /** 0 a 3: cuánto se adelanta la confirmación de palabras en las pausas. Más alto = antes, pero puede cortar frases. */
+  nivelLatencia: number;
+}
+
+export const AJUSTES_VOZ: AjustesVoz = { velocidad: 1.1, reducirSilencios: true, voz: "", envio: "palabra", nivelLatencia: 1 };
+
 export interface OpcionesConexion {
   entrada: MediaStream;
   idiomaOrigen: Idioma;
   idiomaDestino: Idioma;
   glosario: TerminoGlosario[];
+  ajustesVoz: AjustesVoz;
 }
 
 export interface CapacidadesProveedor {
@@ -51,4 +68,6 @@ export interface ProveedorTraduccion {
   readonly capacidades: CapacidadesProveedor;
   conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void>;
   desconectar(): void;
+  /** Cambia los ajustes de voz en vivo (aplican desde la siguiente frase). Solo si el proveedor genera la voz aparte. */
+  ajustarVoz?(ajustes: AjustesVoz): void;
 }

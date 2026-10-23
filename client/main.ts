@@ -6,7 +6,7 @@ import { formatoSegundos } from "./metrics/estadisticas";
 import { aCSV, aJSON, descargar, resumirSesion, type DatosSesion, type EventoCrudo } from "./metrics/exportar";
 import { CONFIG_REGISTRO, RegistroSesion } from "./metrics/registro";
 import { PROVEEDORES } from "./providers";
-import type { EstadoConexion, EventoProveedor, Idioma, ProveedorTraduccion } from "./providers/tipos";
+import { AJUSTES_VOZ, type AjustesVoz, type EstadoConexion, type EventoProveedor, type Idioma, type ProveedorTraduccion } from "./providers/tipos";
 import { PanelGlosario } from "./ui/glosario";
 import { PanelBilingue } from "./ui/panel";
 
@@ -45,6 +45,13 @@ const ui = {
   descarte: $<HTMLInputElement>("aj-descarte"),
   umbralDescarte: $<HTMLInputElement>("aj-umbral-descarte"),
   monitor: $<HTMLInputElement>("aj-monitor"),
+  ajustesVoz: $<HTMLFieldSetElement>("ajustes-voz"),
+  velocidad: $<HTMLInputElement>("aj-velocidad"),
+  velocidadValor: $<HTMLOutputElement>("aj-velocidad-valor"),
+  reducir: $<HTMLInputElement>("aj-reducir"),
+  vozElegida: $<HTMLSelectElement>("aj-voz"),
+  envio: $<HTMLSelectElement>("aj-envio"),
+  nivelLatencia: $<HTMLSelectElement>("aj-latencia"),
 };
 
 const panel = new PanelBilingue($("panel"), $<HTMLOListElement>("transcripcion"), $<HTMLButtonElement>("ir-reciente"));
@@ -90,6 +97,72 @@ function idiomas(): { origen: Idioma; destino: Idioma } {
 
 function fuenteElegida(): "microfono" | "archivo" {
   return (document.querySelector<HTMLInputElement>('input[name="fuente"]:checked')?.value as "microfono" | "archivo") ?? "microfono";
+}
+
+// ---------- Ajustes de voz ----------
+
+const CLAVE_AJUSTES_VOZ = "traductor.ajustesVoz.v1";
+
+function ajustesVoz(): AjustesVoz {
+  return {
+    velocidad: Number(ui.velocidad.value),
+    reducirSilencios: ui.reducir.checked,
+    voz: ui.vozElegida.value,
+    envio: ui.envio.value === "frase" ? "frase" : "palabra",
+    nivelLatencia: Number(ui.nivelLatencia.value),
+  };
+}
+
+function mostrarAjustesVoz(a: AjustesVoz): void {
+  ui.velocidad.value = String(a.velocidad);
+  ui.velocidadValor.textContent = `${a.velocidad.toFixed(2)}×`;
+  ui.reducir.checked = a.reducirSilencios;
+  ui.envio.value = a.envio;
+  ui.nivelLatencia.value = String(a.nivelLatencia);
+  ui.vozElegida.dataset.guardada = a.voz;
+}
+
+function cambiarAjustesVoz(): void {
+  const a = ajustesVoz();
+  ui.velocidadValor.textContent = `${a.velocidad.toFixed(2)}×`;
+  try {
+    localStorage.setItem(CLAVE_AJUSTES_VOZ, JSON.stringify(a));
+  } catch {
+    // Sin almacenamiento: los ajustes duran solo esta pestaña.
+  }
+  sesion?.proveedor.ajustarVoz?.(a);
+}
+
+function cargarAjustesVoz(): void {
+  let guardados: Partial<AjustesVoz> = {};
+  try {
+    guardados = JSON.parse(localStorage.getItem(CLAVE_AJUSTES_VOZ) ?? "{}");
+  } catch {
+    // Valores por defecto.
+  }
+  mostrarAjustesVoz({ ...AJUSTES_VOZ, ...guardados });
+}
+
+async function cargarVoces(): Promise<void> {
+  try {
+    const { voces, porDefecto } = (await (await fetch(`/api/soniox/voces?idioma=${idiomas().destino}`)).json()) as {
+      voces: { id: string; descripcion: string; genero: string }[];
+      porDefecto: string;
+    };
+    if (!voces?.length) return;
+    const guardada = ui.vozElegida.dataset.guardada ?? "";
+    ui.vozElegida.replaceChildren(
+      new Option(`La predeterminada (${porDefecto})`, ""),
+      ...voces.map((v) => new Option([v.id, v.genero, v.descripcion].filter(Boolean).join(" · "), v.id)),
+    );
+    ui.vozElegida.value = voces.some((v) => v.id === guardada) ? guardada : "";
+  } catch {
+    // Sin lista: se usa la voz predeterminada del servidor.
+  }
+}
+
+for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.nivelLatencia]) {
+  control.addEventListener(control === ui.velocidad ? "input" : "change", cambiarAjustesVoz);
 }
 
 // ---------- Avisos ----------
@@ -256,7 +329,7 @@ async function empezar(): Promise<void> {
     render();
   }, 100);
 
-  await proveedor.conectar({ entrada: fuente.flujo, idiomaOrigen: origen, idiomaDestino: destino, glosario: glosario.activos() }, (evento) =>
+  await proveedor.conectar({ entrada: fuente.flujo, idiomaOrigen: origen, idiomaDestino: destino, glosario: glosario.activos(), ajustesVoz: ajustesVoz() }, (evento) =>
     manejarEvento(actual, evento),
   );
 }
@@ -355,6 +428,7 @@ function datosSesion(): DatosSesion {
       pausaIntervencionMs: registro.config.pausaIntervencionMs,
       saltarRetraso: ui.descarte.checked,
       umbralSaltoS: Number(ui.umbralDescarte.value),
+      ...(PROVEEDORES[ui.proveedor.value].crear().capacidades.vozEnVivo ? {} : { voz: ajustesVoz() }),
     },
   };
 }
@@ -455,6 +529,7 @@ function mostrarProveedor(): void {
   const id = ui.proveedor.value;
   const capacidades = PROVEEDORES[id].crear().capacidades;
   ui.notaGlosario.textContent = capacidades.notaGlosario;
+  ui.ajustesVoz.disabled = capacidades.vozEnVivo;
   ui.notaVoz.textContent = capacidades.vozEnVivo
     ? "Con este proveedor la voz llega en vivo y no se puede acelerar (ver README, Decisiones)."
     : "Con este proveedor la voz se acelera sola cuando se atrasa más de 2 s y salta lo pendiente pasados 5 s.";
@@ -490,12 +565,14 @@ async function revisarConfig(): Promise<void> {
     ui.proveedor.value = keys[preferido] ? preferido : (Object.keys(PROVEEDORES).find((p) => keys[p]) ?? preferido);
     ui.direccion.value = config.idiomaOrigen === "en" && config.idiomaDestino === "es" ? "en-es" : "es-en";
     mostrarProveedor();
+    if (keys.soniox) void cargarVoces();
   } catch {
     avisar("key", "error", "No se pudo hablar con el servidor local. ¿Está corriendo `npm run dev`?");
     mostrarGrabando(false);
   }
 }
 
+cargarAjustesVoz();
 mostrarVoz();
 render();
 void revisarConfig();

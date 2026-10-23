@@ -15,20 +15,24 @@ import {
   type SttSessionConfig,
 } from "@soniox/client";
 import { ReproductorPcm } from "../audio/reproductor";
-import type { EstadoConexion, EventoProveedor, OpcionesConexion, ProveedorTraduccion } from "./tipos";
+import type { AjustesVoz, EstadoConexion, EventoProveedor, OpcionesConexion, ProveedorTraduccion } from "./tipos";
 
 const URL_STT = "wss://stt-rt.soniox.com/transcribe-websocket";
 const URL_TTS = "wss://tts-rt.soniox.com/tts-websocket";
 const FRECUENCIA = 24000;
 const MAX_REINTENTOS = 5;
-/** Con más audio en cola que esto, las frases nuevas se generan más rápido (RF-14). */
+/** Con más audio en cola que esto, las frases nuevas se generan un 15% más rápido (RF-14), hasta 1.3x. */
 const ACELERAR_DESDE_S = 2;
-const VELOCIDAD_RAPIDA = 1.2;
+const FACTOR_ACELERACION = 1.15;
+const VELOCIDAD_MAXIMA = 1.3;
 /** Con más audio en cola que esto, se descarta lo pendiente y se sigue con lo más reciente. */
 const DESCARTAR_DESDE_S = 5;
 /** Sin texto nuevo durante este tiempo, se cierra la frase de voz para que termine de sonar. */
-const CIERRE_FRASE_MS = 1200;
+const CIERRE_FRASE_MS = 600;
 const FIN_FRASE = /[.?!…]["')\]]*\s*$/;
+/** En modo "frase", se manda a la voz al llegar a una pausa natural o a este número de palabras. */
+const PAUSA_NATURAL = /[,;:.?!…]["')\]]*\s*$/;
+const PALABRAS_POR_ENVIO = 5;
 
 interface RespuestaSesion {
   llaveStt: string;
@@ -114,10 +118,16 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   private cierreFrase: number | undefined;
   private provisionalOriginal = "";
   private provisionalTraduccion = "";
+  private ajustes: AjustesVoz | null = null;
+  private vozServidor = "";
+  /** Texto traducido que espera una pausa natural (modo "frase"). */
+  private porDecir = "";
+  private esperaEnvio: number | undefined;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
     this.alEvento = alEvento;
+    this.ajustes = { ...opciones.ajustesVoz };
     this.activo = true;
     this.reintentos = 0;
     this.reproductor = new ReproductorPcm(FRECUENCIA);
@@ -125,6 +135,10 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     this.emitir({ tipo: "audio_traducido", pista: this.reproductor.flujo, t: performance.now() });
     this.emitirEstado("conectando");
     await this.abrir();
+  }
+
+  ajustarVoz(ajustes: AjustesVoz): void {
+    this.ajustes = { ...ajustes };
   }
 
   desconectar(): void {
@@ -157,10 +171,11 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       await stt.connect();
 
       pieza = "voz";
+      this.vozServidor = sesion.voz;
       const tts = new RealtimeTtsConnection(sesion.llaveTts, URL_TTS, {
         model: sesion.modeloTts,
         language: this.opciones.idiomaDestino,
-        voice: sesion.voz,
+        voice: this.ajustes?.voz || sesion.voz,
         audio_format: "pcm_s16le",
         sample_rate: FRECUENCIA,
       });
@@ -186,6 +201,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       language_hints: [idiomaOrigen],
       enable_endpoint_detection: true,
       max_endpoint_delay_ms: 500,
+      endpoint_latency_adjustment_level: this.ajustes?.nivelLatencia ?? 0,
       translation: { type: "one_way", target_language: idiomaDestino },
       context: {
         general: [{ key: "domain", value: "Reunión de trabajo de un equipo de producto y desarrollo de software" }],
@@ -245,6 +261,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
 
   private cerrarConexiones(): void {
     window.clearTimeout(this.cierreFrase);
+    window.clearTimeout(this.esperaEnvio);
+    this.porDecir = "";
     if (this.grabador && this.grabador.state !== "inactive") this.grabador.stop();
     this.grabador = null;
     const stt = this.stt;
@@ -324,8 +342,29 @@ export class ProveedorSoniox implements ProveedorTraduccion {
 
   // ---------- Voz ----------
 
-  /** Manda texto confirmado a la voz. Las llamadas se encadenan para respetar el orden. */
+  /** Recibe texto traducido confirmado y decide cuándo mandarlo a la voz. */
   private hablar(texto: string): void {
+    if (this.ajustes?.envio !== "frase") {
+      this.enviarAVoz(texto);
+      return;
+    }
+    this.porDecir += texto;
+    window.clearTimeout(this.esperaEnvio);
+    const palabras = this.porDecir.trim().split(/\s+/).length;
+    if (PAUSA_NATURAL.test(this.porDecir) || palabras >= PALABRAS_POR_ENVIO) this.soltarPorDecir();
+    else this.esperaEnvio = window.setTimeout(() => this.soltarPorDecir(), CIERRE_FRASE_MS);
+  }
+
+  private soltarPorDecir(): void {
+    window.clearTimeout(this.esperaEnvio);
+    if (!this.porDecir) return;
+    const texto = this.porDecir;
+    this.porDecir = "";
+    this.enviarAVoz(texto);
+  }
+
+  /** Manda texto a la voz. Las llamadas se encadenan para respetar el orden. */
+  private enviarAVoz(texto: string): void {
     this.cadenaVoz = this.cadenaVoz
       .then(async () => {
         if (!this.tts || !this.activo) return;
@@ -339,6 +378,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   }
 
   private cerrarFrase(): void {
+    this.soltarPorDecir();
     this.cadenaVoz = this.cadenaVoz.then(() => this.finTramo());
   }
 
@@ -350,8 +390,14 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   }
 
   private async abrirTramo(): Promise<Tramo> {
+    const ajustes = this.ajustes;
+    const base = ajustes?.velocidad ?? 1;
     const atrasada = (this.reproductor?.pendiente ?? 0) > ACELERAR_DESDE_S;
-    const stream = await this.tts!.stream({ speed: atrasada ? VELOCIDAD_RAPIDA : 1 });
+    const stream = await this.tts!.stream({
+      speed: Math.min(VELOCIDAD_MAXIMA, atrasada ? base * FACTOR_ACELERACION : base),
+      reduce_silence: ajustes?.reducirSilencios ?? false,
+      voice: ajustes?.voz || this.vozServidor,
+    });
     const tramo: Tramo = { stream, pendiente: [], terminado: false };
     this.tramos.push(tramo);
     stream.on("audio", (bytes) => {
@@ -397,6 +443,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     }
     this.tramos = [];
     this.abierto = null;
+    this.porDecir = "";
     this.emitir({ tipo: "diagnostico", nombre: "voz_descartada", muestra: `Más de ${DESCARTAR_DESDE_S} s de voz en cola`, t: performance.now() });
   }
 

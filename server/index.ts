@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { crearSecretoCliente, ErrorProveedor, esIdioma, type Idioma } from "./openai.js";
-import { crearSesionSoniox } from "./soniox.js";
+import { crearSesionSoniox, listarVoces } from "./soniox.js";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const produccion = process.argv.includes("--produccion") || process.env.NODE_ENV === "production";
@@ -69,6 +69,21 @@ app.post("/api/sesion", async (req, res) => {
     }
     console.error(`[sesion:${proveedor}] error inesperado`, error instanceof Error ? error.message : error);
     res.status(500).json({ codigo: "error_servidor", mensaje: "Error inesperado en el servidor local." });
+  }
+});
+
+app.get("/api/soniox/voces", async (req, res) => {
+  const key = apiKey("soniox");
+  const idioma = esIdioma(req.query.idioma) ? req.query.idioma : idiomaDestino;
+  if (!key) {
+    res.json({ voces: [], porDefecto: "" });
+    return;
+  }
+  try {
+    res.json({ voces: await listarVoces(key, idioma), porDefecto: process.env.SONIOX_VOICE?.trim() || "Adrian" });
+  } catch (error) {
+    const mensaje = error instanceof ErrorProveedor ? error.message : "No se pudo obtener la lista de voces.";
+    res.status(502).json({ voces: [], mensaje });
   }
 });
 

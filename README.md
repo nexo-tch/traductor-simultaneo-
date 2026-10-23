@@ -125,7 +125,9 @@ Desviaciones de `SPEC.md` y su motivo:
     - El audio de la voz pasa por una cola propia (`client/audio/reproductor.ts`). Si la cola pasa de 2 s, las frases nuevas se generan a 1.2× (RF-14). Si pasa de 5 s, se descarta lo pendiente (8.3).
     - El audio del micrófono se manda en pedazos de 100 ms en WebM/Opus (lo que graba Chrome), sin convertir.
     - Se usa el SDK oficial `@soniox/client` 2.4.0 para no reimplementar su protocolo. Su web no era accesible al construirlo; la referencia fueron los tipos y ejemplos del SDK.
-    - Voz por defecto: `Adrian` (la del ejemplo oficial). Se cambia con `SONIOX_VOICE` en `.env`.
+    - Voz por defecto: `Adrian` (la del ejemplo oficial). Se cambia en *Ajustes → Voz traducida* (la lista viene de Soniox) o con `SONIOX_VOICE` en `.env`.
+    - *Ajustes → Voz traducida* controla la velocidad base (1.1× por defecto; se acelera un 15% extra si la voz se atrasa, hasta 1.3×), si se acortan las pausas entre palabras (`reduce_silence`), si el texto va a la voz palabra por palabra o por frases cortas (hasta una coma o 5 palabras: suena más natural pero tarda un poco más) y qué tan rápido confirma Soniox las palabras en las pausas (`endpoint_latency_adjustment_level`, 1 por defecto). Los cambios se guardan en el navegador.
+    - Una frase de voz se cierra tras 0.6 s sin texto nuevo (antes 1.2 s), para que las últimas palabras no esperen.
 12. **Texto provisional**: Soniox manda palabras sin confirmar que luego puede corregir. Se muestran en gris al final del texto confirmado, y no se exportan.
 
 Fuentes técnicas: [guía oficial de gpt-realtime-translate (OpenAI Cookbook)](https://developers.openai.com/cookbook/examples/voice_solutions/realtime_translation_guide) y su [demo de navegador](https://github.com/openai/openai-cookbook/tree/main/examples/voice_solutions/realtime_translation_guide/browser-translation-demo). Solo se usan los eventos documentados ahí (`session.input_transcript.delta`, `session.output_transcript.delta`, `error`); los demás se anotan una vez en la consola del navegador para revisarlos.
