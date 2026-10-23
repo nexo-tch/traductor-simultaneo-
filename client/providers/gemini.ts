@@ -18,6 +18,14 @@ const DESCARTAR_DESDE_S = 8;
 const HUECO_MS = 600;
 /** Audio que se guarda mientras Google abre la sesión, para no perder el comienzo (máximo 10 s). */
 const MAX_PEDAZOS_EN_ESPERA = 100;
+/**
+ * Si Google (o la subida) se atrasa más que esto, se abre una sesión nueva y se
+ * descarta lo pendiente: en una reunión es mejor saltar unos segundos que quedar
+ * cada vez más atrás.
+ */
+const PONERSE_AL_DIA_MS = 6000;
+/** Tras ponerse al día, no se vuelve a medir el atraso durante este tiempo. */
+const PAUSA_TRAS_SALTO_MS = 10000;
 
 interface RespuestaSesion {
   token: string;
@@ -59,6 +67,14 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private ultimoAudio = 0;
   private ultimaEntrada = 0;
   private hayProvisional = false;
+  // Medición del atraso de Google (ver medirAtraso).
+  private ultimaVozEnviada = 0;
+  private ruido: number[] = [];
+  private atrasoGoogle = 0;
+  private atrasoMedidoEn = 0;
+  private bytesPorPedazo = 0;
+  private saltoEn = 0;
+  private vigilancia: number | undefined;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -81,8 +97,9 @@ export class ProveedorGemini implements ProveedorTraduccion {
     this.emitirEstado("desconectado");
   }
 
+  /** Voz en cola + lo que Google (o la subida) lleva de atraso. */
   retrasoVoz(): number {
-    return (this.reproductor?.pendiente ?? 0) * 1000;
+    return (this.reproductor?.pendiente ?? 0) * 1000 + this.atrasoAntesDeLaVoz(performance.now());
   }
 
   // ---------- Conexión ----------
@@ -93,7 +110,10 @@ export class ProveedorGemini implements ProveedorTraduccion {
       // La captura arranca antes de abrir la sesión: lo que se diga mientras Google confirma
       // (unos 2 s) queda en espera y se manda apenas la sesión esté lista.
       if (!this.captura) {
-        this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => this.enviar(aBase64(new Uint8Array(pcm.buffer))));
+        this.captura = await capturarPcm(this.opciones.entrada, FRECUENCIA_ENTRADA, PEDAZO_MS, (pcm) => {
+          if (this.hayVoz(pcm)) this.ultimaVozEnviada = performance.now();
+          this.enviar(aBase64(new Uint8Array(pcm.buffer)));
+        });
       }
       const { token, modelo } = await this.pedirSesion(this.opciones.idiomaDestino);
       if (!this.activo) return;
@@ -134,6 +154,8 @@ export class ProveedorGemini implements ProveedorTraduccion {
       if (acumulado.length) this.emitir({ tipo: "diagnostico", nombre: "gemini_audio_en_espera", muestra: `${acumulado.length * PEDAZO_MS} ms enviados al abrir la sesión`, t: performance.now() });
       for (const datos of acumulado) this.enviar(datos);
       this.reintentos = 0;
+      window.clearInterval(this.vigilancia);
+      this.vigilancia = window.setInterval(() => this.vigilarAtraso(), 500);
       this.emitirEstado("conectado");
     } catch (error) {
       this.fallo(error);
@@ -167,7 +189,67 @@ export class ProveedorGemini implements ProveedorTraduccion {
       if (this.enEspera.length > MAX_PEDAZOS_EN_ESPERA) this.enEspera.shift();
       return;
     }
+    this.bytesPorPedazo = datos.length + 100;
     sesion.sendRealtimeInput({ audio: { data: datos, mimeType: `audio/pcm;rate=${FRECUENCIA_ENTRADA}` } });
+  }
+
+  // ---------- Atraso de Google ----------
+
+  /** Detector de voz simple sobre lo que se manda, con el piso de ruido de los últimos 6 s. */
+  private hayVoz(pcm: Int16Array): boolean {
+    let suma = 0;
+    for (let i = 0; i < pcm.length; i++) suma += pcm[i] * pcm[i];
+    const rms = Math.sqrt(suma / Math.max(1, pcm.length)) / 32768;
+    this.ruido.push(rms);
+    if (this.ruido.length > 60) this.ruido.shift();
+    const piso = [...this.ruido].sort((a, b) => a - b)[Math.floor(this.ruido.length * 0.2)] ?? 0;
+    return rms > Math.max(0.01, piso * 2);
+  }
+
+  /** Audio que sigue en el navegador esperando subir (la conexión no da abasto). */
+  private subidaPendienteMs(): number {
+    const ws = (this.sesion as unknown as { conn?: { ws?: WebSocket } } | null)?.conn?.ws;
+    if (!ws || !this.bytesPorPedazo) return 0;
+    return (ws.bufferedAmount / this.bytesPorPedazo) * PEDAZO_MS;
+  }
+
+  /**
+   * Google transcribe lo que oye. Si sigue mandando transcripción cuando ya pasó un rato
+   * sin voz en lo que se le envió, va atrasado al menos ese tiempo (cota inferior: solo se
+   * puede medir en las pausas).
+   */
+  private medirAtraso(t: number): void {
+    if (!this.ultimaVozEnviada || t - this.saltoEn < PAUSA_TRAS_SALTO_MS) return;
+    const sinVoz = t - this.ultimaVozEnviada;
+    this.atrasoGoogle = sinVoz > 1500 ? sinVoz : 0;
+    this.atrasoMedidoEn = t;
+  }
+
+  private atrasoAntesDeLaVoz(t: number): number {
+    // La medida vale mientras Google siga transcribiendo; si calla, ya se puso al día.
+    const google = t - this.atrasoMedidoEn < 2000 ? this.atrasoGoogle : 0;
+    return Math.max(google, this.subidaPendienteMs());
+  }
+
+  private vigilarAtraso(): void {
+    const t = performance.now();
+    if (!this.activo || !this.sesionLista || t - this.saltoEn < PAUSA_TRAS_SALTO_MS) return;
+    const subida = this.subidaPendienteMs();
+    const google = t - this.atrasoMedidoEn < 2000 ? this.atrasoGoogle : 0;
+    if (subida > 1000) {
+      this.emitir({ tipo: "diagnostico", nombre: "gemini_subida_atrasada", muestra: `${(subida / 1000).toFixed(1)} s de audio esperando subir`, t });
+    }
+    const atraso = Math.max(subida, google);
+    if (atraso < PONERSE_AL_DIA_MS) return;
+    const donde = subida >= google ? "la conexión a internet no alcanza a subir el audio" : "Google va atrasado";
+    this.saltoEn = t;
+    this.atrasoGoogle = 0;
+    this.emitir({ tipo: "diagnostico", nombre: "gemini_puesta_al_dia", muestra: `${(atraso / 1000).toFixed(1)} s de atraso (${donde}); sesión nueva`, t });
+    this.emitirEstado("reconectando", `La traducción iba ${Math.round(atraso / 1000)} s atrasada (${donde}). Se salta lo pendiente para ponerse al día…`);
+    this.reproductor?.vaciar();
+    this.enEspera = [];
+    this.cerrarConexion();
+    void this.abrir();
   }
 
   /** Cierra la conexión con Google. La captura sigue (y acumula) salvo que se pida detenerla. */
@@ -178,6 +260,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
       this.enEspera = [];
     }
     this.sesionLista = null;
+    window.clearInterval(this.vigilancia);
     const sesion = this.sesion;
     this.sesion = null;
     try {
@@ -242,6 +325,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
     }
     if (contenido.inputTranscription?.text) {
       this.ultimaEntrada = t;
+      this.medirAtraso(t);
       if (this.hayProvisional) {
         this.hayProvisional = false;
         this.emitir({ tipo: "transcripcion_provisional", texto: "", t });
