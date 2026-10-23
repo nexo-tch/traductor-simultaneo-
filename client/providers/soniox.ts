@@ -33,6 +33,13 @@ const DESCARTAR_DESDE_S = 5;
  * hace que baje la entonación y haga una pausa a mitad de la idea.
  */
 const CIERRE_FRASE_MS = 1000;
+/**
+ * Sin cortes por pausa, Soniox deja las últimas palabras sin confirmar hasta
+ * que se vuelve a hablar (en una prueba, el final de un audio nunca se tradujo).
+ * Si la cola sin confirmar no cambia en este tiempo, la persona se calló: se
+ * pide a Soniox que la confirme. Es más largo que las micro-pausas al hablar.
+ */
+const CONFIRMAR_TRAS_MS = 900;
 /** Punto (o exclamación) al final de un pedazo de texto. La "?" se respeta siempre. */
 const PUNTO_FINAL = /[.!…](["')\]]*)\s*$/;
 /** En modo "frase", se manda a la voz al llegar a una pausa natural o a este número de palabras. */
@@ -130,6 +137,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   private esperaEnvio: number | undefined;
   /** Se quitó un punto al final del último texto: si sigue llegando texto, se lee como coma. */
   private puntoPendiente = false;
+  private colaVigilada = "";
+  private esperaConfirmar: number | undefined;
 
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
@@ -273,6 +282,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   private cerrarConexiones(): void {
     window.clearTimeout(this.cierreFrase);
     window.clearTimeout(this.esperaEnvio);
+    window.clearTimeout(this.esperaConfirmar);
+    this.colaVigilada = "";
     this.porDecir = "";
     this.puntoPendiente = false;
     if (this.grabador && this.grabador.state !== "inactive") this.grabador.stop();
@@ -338,6 +349,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     }
 
     if (original) this.emitir({ tipo: "transcripcion_parcial", texto: original, t });
+    if ((this.ajustes?.cortes ?? "largas") === "largas") this.vigilarCola(provisionalOriginal + provisionalTraduccion);
     if (provisionalOriginal !== this.provisionalOriginal) {
       this.provisionalOriginal = provisionalOriginal;
       this.emitir({ tipo: "transcripcion_provisional", texto: provisionalOriginal, t });
@@ -350,6 +362,14 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       this.provisionalTraduccion = provisionalTraduccion;
       this.emitir({ tipo: "traduccion_provisional", texto: provisionalTraduccion, t });
     }
+  }
+
+  /** Si la cola sin confirmar deja de cambiar, pide a Soniox que la confirme (ver CONFIRMAR_TRAS_MS). */
+  private vigilarCola(cola: string): void {
+    if (cola === this.colaVigilada) return;
+    this.colaVigilada = cola;
+    window.clearTimeout(this.esperaConfirmar);
+    if (cola.trim()) this.esperaConfirmar = window.setTimeout(() => this.stt?.finalize(), CONFIRMAR_TRAS_MS);
   }
 
   // ---------- Voz ----------
