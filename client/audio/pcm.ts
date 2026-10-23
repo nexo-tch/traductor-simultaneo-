@@ -1,17 +1,7 @@
 // Convierte un MediaStream en pedazos de PCM 16 bits mono a la frecuencia pedida,
 // para proveedores que reciben audio crudo (Gemini Live: 16 kHz).
 // Usa un AudioWorklet: corre en el hilo de audio, sin cortes aunque la pestaña esté en segundo plano.
-
-const CODIGO_WORKLET = `
-class Captura extends AudioWorkletProcessor {
-  process(entradas) {
-    const canal = entradas[0] && entradas[0][0];
-    if (canal) this.port.postMessage(canal.slice(0));
-    return true;
-  }
-}
-registerProcessor("captura-pcm", Captura);
-`;
+import urlWorklet from "./captura-pcm.worklet.js?url";
 
 export interface CapturaPcm {
   detener(): void;
@@ -28,12 +18,7 @@ export async function capturarPcm(
   alPedazo: (pcm: Int16Array) => void,
 ): Promise<CapturaPcm> {
   const contexto = new AudioContext({ sampleRate: frecuencia });
-  const url = URL.createObjectURL(new Blob([CODIGO_WORKLET], { type: "application/javascript" }));
-  try {
-    await contexto.audioWorklet.addModule(url);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  await contexto.audioWorklet.addModule(urlWorklet);
   const fuente = contexto.createMediaStreamSource(flujo);
   const nodo = new AudioWorkletNode(contexto, "captura-pcm");
   const porPedazo = Math.round((frecuencia * pedazoMs) / 1000);

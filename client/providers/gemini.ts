@@ -86,6 +86,9 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private separarEntrada = false;
   private separarSalida = false;
 
+  /** `servidor`: dirección del servidor local de tokens; vacío = el mismo origen (el probador). */
+  constructor(private readonly servidor = "") {}
+
   async conectar(opciones: OpcionesConexion, alEvento: (evento: EventoProveedor) => void): Promise<void> {
     this.opciones = opciones;
     this.alEvento = alEvento;
@@ -173,7 +176,7 @@ export class ProveedorGemini implements ProveedorTraduccion {
   private async pedirSesion(idiomaDestino: string): Promise<RespuestaSesion> {
     let respuesta: Response;
     try {
-      respuesta = await fetch("/api/sesion", {
+      respuesta = await fetch(`${this.servidor}/api/sesion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ proveedor: "gemini", idiomaDestino }),
@@ -357,7 +360,12 @@ export class ProveedorGemini implements ProveedorTraduccion {
         this.emitir({ tipo: "transcripcion_provisional", texto: "", t });
       }
       const texto = contenido.inputTranscription.text;
-      this.emitir({ tipo: "transcripcion_parcial", texto: this.separarEntrada ? ` ${texto.trimStart()}` : texto, t });
+      this.emitir({
+        tipo: "transcripcion_parcial",
+        texto: this.separarEntrada ? ` ${texto.trimStart()}` : texto,
+        idioma: contenido.inputTranscription.languageCode,
+        t,
+      });
       this.separarEntrada = false;
     }
     if (contenido.outputTranscription?.text) {

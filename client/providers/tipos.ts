@@ -13,7 +13,8 @@ export type EstadoConexion = "desconectado" | "conectando" | "conectado" | "reco
  * falta, el registro de la sesión arma los fragmentos (ver metrics/registro.ts).
  */
 export type EventoProveedor =
-  | { tipo: "transcripcion_parcial"; texto: string; t: number; idFragmento?: string }
+  /** `idioma`: código que detectó el proveedor (solo Gemini), para separar quién habla en qué idioma. */
+  | { tipo: "transcripcion_parcial"; texto: string; t: number; idFragmento?: string; idioma?: string }
   | { tipo: "transcripcion_final"; texto: string; t: number; idFragmento: string }
   | { tipo: "traduccion_parcial"; texto: string; t: number; idFragmento?: string }
   | { tipo: "traduccion_final"; texto: string; t: number; idFragmento: string }
