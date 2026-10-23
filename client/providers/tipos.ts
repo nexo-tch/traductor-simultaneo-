@@ -37,7 +37,7 @@ export interface AjustesVoz {
   reducirSilencios: boolean;
   /** Voz del proveedor; vacío = la que elija el servidor. */
   voz: string;
-  /** "palabra": cada pedazo confirmado va a la voz al instante. "frase": se junta hasta una coma o 5 palabras (más natural, algo más lento). */
+  /** "palabra": cada tanda confirmada va a la voz al instante. "frase": una tanda de 1–2 palabras espera hasta 0.6 s para juntarse con la siguiente. */
   envio: "palabra" | "frase";
   /**
    * Cuándo cierra frases Soniox. "largas": solo en pausas largas (más natural).
@@ -47,21 +47,15 @@ export interface AjustesVoz {
   cortes: "largas" | "pausas" | "rapido";
   /** Un punto que llega mientras la persona sigue hablando se lee como coma. */
   suavizarPuntos: boolean;
-  /**
-   * Experimental: dice las palabras provisionales que ya no cambian, sin esperar
-   * la confirmación (SPEC 8.2). Más rápido, pero lo dicho no se puede corregir.
-   */
-  anticipar: boolean;
 }
 
 export const AJUSTES_VOZ: AjustesVoz = {
-  velocidad: 1.1,
+  velocidad: 1.05,
   reducirSilencios: true,
   voz: "",
   envio: "frase",
   cortes: "largas",
   suavizarPuntos: true,
-  anticipar: false,
 };
 
 export interface OpcionesConexion {

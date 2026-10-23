@@ -54,7 +54,6 @@ const ui = {
   envio: $<HTMLSelectElement>("aj-envio"),
   cortes: $<HTMLSelectElement>("aj-cortes"),
   suavizar: $<HTMLInputElement>("aj-suavizar"),
-  anticipar: $<HTMLInputElement>("aj-anticipar"),
 };
 
 const panel = new PanelBilingue($("panel"), $<HTMLOListElement>("transcripcion"), $<HTMLButtonElement>("ir-reciente"));
@@ -104,8 +103,9 @@ function fuenteElegida(): "microfono" | "archivo" {
 
 // ---------- Ajustes de voz ----------
 
-// v2: la v1 guardaba la confirmación agresiva en las pausas, que ponía puntos falsos.
-const CLAVE_AJUSTES_VOZ = "traductor.ajustesVoz.v2";
+// v3: las versiones anteriores guardaban ajustes que causaban pausas (velocidad alta,
+// confirmación agresiva en las pausas, "hablar antes de confirmar").
+const CLAVE_AJUSTES_VOZ = "traductor.ajustesVoz.v3";
 
 function ajustesVoz(): AjustesVoz {
   return {
@@ -115,7 +115,6 @@ function ajustesVoz(): AjustesVoz {
     envio: ui.envio.value === "frase" ? "frase" : "palabra",
     cortes: ui.cortes.value === "pausas" || ui.cortes.value === "rapido" ? ui.cortes.value : "largas",
     suavizarPuntos: ui.suavizar.checked,
-    anticipar: ui.anticipar.checked,
   };
 }
 
@@ -126,7 +125,6 @@ function mostrarAjustesVoz(a: AjustesVoz): void {
   ui.envio.value = a.envio;
   ui.cortes.value = a.cortes;
   ui.suavizar.checked = a.suavizarPuntos;
-  ui.anticipar.checked = a.anticipar;
   ui.vozElegida.dataset.guardada = a.voz;
 }
 
@@ -169,7 +167,7 @@ async function cargarVoces(): Promise<void> {
   }
 }
 
-for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar, ui.anticipar]) {
+for (const control of [ui.velocidad, ui.reducir, ui.vozElegida, ui.envio, ui.cortes, ui.suavizar]) {
   control.addEventListener(control === ui.velocidad ? "input" : "change", cambiarAjustesVoz);
 }
 

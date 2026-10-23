@@ -1,8 +1,8 @@
 // Adaptador de Soniox: transcripción + traducción en streaming (stt-rt-v5) y
 // voz en streaming (tts-rt-v2), con el SDK oficial @soniox/client.
 //
-// A diferencia de OpenAI, son dos piezas: las palabras traducidas que Soniox
-// confirma se mandan a la voz apenas llegan, sin esperar la frase completa.
+// A diferencia de OpenAI, son dos piezas: cada tanda de traducción que Soniox
+// confirma se manda a la voz como una frase cerrada apenas llega.
 // La voz vuelve en pedazos de PCM que reproduce una cola propia, así que se
 // puede acelerar o descartar lo pendiente (SPEC.md 8.3).
 import {
@@ -15,7 +15,6 @@ import {
   type SttSessionConfig,
 } from "@soniox/client";
 import { ReproductorPcm } from "../audio/reproductor";
-import { Anticipador } from "./anticipador";
 import type { AjustesVoz, EstadoConexion, EventoProveedor, OpcionesConexion, ProveedorTraduccion } from "./tipos";
 
 const URL_STT = "wss://stt-rt.soniox.com/transcribe-websocket";
@@ -28,12 +27,8 @@ const FACTOR_ACELERACION = 1.15;
 const VELOCIDAD_MAXIMA = 1.3;
 /** Con más audio en cola que esto, se descarta lo pendiente y se sigue con lo más reciente. */
 const DESCARTAR_DESDE_S = 5;
-/**
- * Sin texto nuevo durante este tiempo, se cierra la frase de voz para que termine de sonar.
- * Mientras llega texto, la voz sigue en una sola frase continua: cerrarla en cada punto
- * hace que baje la entonación y haga una pausa a mitad de la idea.
- */
-const CIERRE_FRASE_MS = 1000;
+/** En modo "frase", una tanda muy corta espera hasta este tiempo para juntarse con la siguiente. */
+const ESPERA_TANDA_CORTA_MS = 600;
 /**
  * Sin cortes por pausa, Soniox deja las últimas palabras sin confirmar hasta
  * que se vuelve a hablar (en una prueba, el final de un audio nunca se tradujo).
@@ -43,9 +38,9 @@ const CIERRE_FRASE_MS = 1000;
 const CONFIRMAR_TRAS_MS = 1600;
 /** Punto (o exclamación) al final de un pedazo de texto. La "?" se respeta siempre. */
 const PUNTO_FINAL = /[.!…](["')\]]*)\s*$/;
-/** En modo "frase", se manda a la voz al llegar a una pausa natural o a este número de palabras. */
+/** En modo "frase", una tanda sin pausa natural y con menos palabras que esto espera a la siguiente. */
 const PAUSA_NATURAL = /[,;:.?!…]["')\]]*\s*$/;
-const PALABRAS_POR_ENVIO = 5;
+const PALABRAS_MINIMAS = 3;
 
 interface RespuestaSesion {
   llaveStt: string;
@@ -58,8 +53,8 @@ interface RespuestaSesion {
 /** Una frase de voz: su stream de TTS y el audio que llegó antes de que le tocara sonar. */
 interface Tramo {
   id: number;
-  /** Para diagnóstico: cuándo se mandó el primer texto y si ya llegó audio. */
-  primerTexto?: number;
+  /** Para diagnóstico: cuándo se mandó el texto y si ya llegó audio. */
+  enviado: number;
   conAudio: boolean;
   stream: RealtimeTtsStream;
   pendiente: Uint8Array[];
@@ -130,20 +125,15 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   private reproductor: ReproductorPcm | null = null;
 
   private tramos: Tramo[] = [];
-  private abierto: Tramo | null = null;
   private cadenaVoz: Promise<void> = Promise.resolve();
-  private cierreFrase: number | undefined;
   private provisionalOriginal = "";
   private provisionalTraduccion = "";
   private ajustes: AjustesVoz | null = null;
   private vozServidor = "";
-  /** Texto traducido que espera una pausa natural (modo "frase"). */
+  /** Tanda corta que espera juntarse con la siguiente (modo "frase"). */
   private porDecir = "";
   private esperaEnvio: number | undefined;
-  /** Se quitó un punto al final del último texto: si sigue llegando texto, se lee como coma. */
-  private puntoPendiente = false;
   private colaVigilada = "";
-  private readonly anticipador = new Anticipador();
   private siguienteTramo = 1;
   private palabrasProvisionales = 0;
   private esperaConfirmar: number | undefined;
@@ -288,13 +278,10 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   }
 
   private cerrarConexiones(): void {
-    window.clearTimeout(this.cierreFrase);
     window.clearTimeout(this.esperaEnvio);
     window.clearTimeout(this.esperaConfirmar);
     this.colaVigilada = "";
-    this.anticipador.reiniciar();
     this.porDecir = "";
-    this.puntoPendiente = false;
     if (this.grabador && this.grabador.state !== "inactive") this.grabador.stop();
     this.grabador = null;
     const stt = this.stt;
@@ -304,7 +291,6 @@ export class ProveedorSoniox implements ProveedorTraduccion {
     this.tts = null;
     tts?.close();
     this.tramos = [];
-    this.abierto = null;
     this.cadenaVoz = Promise.resolve();
     this.provisionalOriginal = "";
     this.provisionalTraduccion = "";
@@ -363,16 +349,8 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       this.provisionalOriginal = provisionalOriginal;
       this.emitir({ tipo: "transcripcion_provisional", texto: provisionalOriginal, t });
     }
-    if (traduccion) this.emitir({ tipo: "traduccion_parcial", texto: traduccion, t });
-    if (this.ajustes?.anticipar) {
-      // Lo estable va a la voz apenas se sabe, sin agrupar por frases.
-      const correccionesAntes = this.anticipador.correcciones;
-      const decir = this.anticipador.actualizar(traduccion, provisionalTraduccion);
-      if (decir) this.enviarAVoz(decir);
-      if (this.anticipador.correcciones > correccionesAntes) {
-        this.emitir({ tipo: "diagnostico", nombre: "correccion_ya_dicha", muestra: this.anticipador.ultimaCorreccion, t });
-      }
-    } else if (traduccion) {
+    if (traduccion) {
+      this.emitir({ tipo: "traduccion_parcial", texto: traduccion, t });
       this.hablar(traduccion);
     }
     const palabrasProv = provisionalTraduccion.trim() ? provisionalTraduccion.trim().split(/\s+/).length : 0;
@@ -395,76 +373,46 @@ export class ProveedorSoniox implements ProveedorTraduccion {
   }
 
   // ---------- Voz ----------
+  //
+  // En una prueba real, la voz de Soniox no hablaba un texto hasta recibir el
+  // siguiente o el cierre (esperaba 3.5–5.4 s, y con la frase abierta sin audio
+  // Soniox la cortaba: «output audio rate below minimum»). Por eso cada tanda
+  // confirmada es una frase de voz propia que se cierra en el acto. Las tandas de
+  // Soniox ya son frases naturales (6–9 palabras en las pruebas).
 
-  /** Recibe texto traducido confirmado y decide cuándo mandarlo a la voz. */
+  /** Recibe una tanda de traducción confirmada y decide cuándo mandarla a la voz. */
   private hablar(texto: string): void {
-    if (this.ajustes?.envio !== "frase") {
-      this.enviarAVoz(texto);
-      return;
-    }
     this.porDecir += texto;
     window.clearTimeout(this.esperaEnvio);
-    const palabras = this.porDecir.trim().split(/\s+/).length;
-    if (PAUSA_NATURAL.test(this.porDecir) || palabras >= PALABRAS_POR_ENVIO) this.soltarPorDecir();
-    else this.esperaEnvio = window.setTimeout(() => this.soltarPorDecir(), CIERRE_FRASE_MS);
+    const corta = !PAUSA_NATURAL.test(this.porDecir) && this.porDecir.trim().split(/\s+/).length < PALABRAS_MINIMAS;
+    if (this.ajustes?.envio === "frase" && corta) {
+      this.esperaEnvio = window.setTimeout(() => this.soltarPorDecir(), ESPERA_TANDA_CORTA_MS);
+    } else {
+      this.soltarPorDecir();
+    }
   }
 
   private soltarPorDecir(): void {
     window.clearTimeout(this.esperaEnvio);
-    if (!this.porDecir) return;
-    const texto = this.porDecir;
+    if (!this.porDecir.trim()) return;
+    let texto = this.porDecir;
     this.porDecir = "";
+    // Un punto mientras la persona sigue hablando suele ser un corte a mitad de la idea:
+    // como coma, la voz no baja la entonación como en un final de oración.
+    if (this.ajustes?.suavizarPuntos && this.provisionalOriginal.trim()) texto = texto.replace(PUNTO_FINAL, ",$1");
     this.enviarAVoz(texto);
   }
 
-  /** Manda texto a la voz. Las llamadas se encadenan para respetar el orden. */
+  /** Manda una frase cerrada a la voz. Las llamadas se encadenan para respetar el orden. */
   private enviarAVoz(texto: string): void {
-    let envio = texto;
-    if (this.puntoPendiente) {
-      // Siguió llegando texto: el punto quitado era un corte a mitad de la idea.
-      envio = `,${envio}`;
-      this.puntoPendiente = false;
-    }
-    if (this.ajustes?.suavizarPuntos && PUNTO_FINAL.test(envio)) {
-      envio = envio.replace(PUNTO_FINAL, "$1");
-      this.puntoPendiente = true;
-    }
-    window.clearTimeout(this.cierreFrase);
-    this.cierreFrase = window.setTimeout(() => this.cerrarFrase(), CIERRE_FRASE_MS);
     this.cadenaVoz = this.cadenaVoz
       .then(async () => {
-        if (!this.tts || !this.activo || !envio.trim()) return;
-        if (!this.abierto || this.abierto.stream.state !== "active") this.abierto = await this.abrirTramo();
-        this.abierto.primerTexto ??= performance.now();
-        this.abierto.stream.sendText(envio);
-        this.emitir({ tipo: "diagnostico", nombre: `a_la_voz#${this.abierto.id}`, muestra: envio, t: performance.now() });
+        if (!this.tts || !this.activo) return;
+        const tramo = await this.abrirTramo();
+        tramo.stream.sendText(texto, { end: true });
+        this.emitir({ tipo: "diagnostico", nombre: `a_la_voz#${tramo.id}`, muestra: texto, t: performance.now() });
       })
       .catch((error) => this.emitir({ tipo: "error", codigo: "voz", mensaje: `Voz de Soniox: ${error instanceof Error ? error.message : error}`, recuperable: true, t: performance.now() }));
-  }
-
-  private cerrarFrase(): void {
-    window.clearTimeout(this.cierreFrase);
-    // Si Soniox tiene habla sin confirmar, la persona sigue hablando y viene más texto:
-    // cerrar ahora obligaría a abrir otra frase de voz, que tarda en arrancar (pausa audible).
-    if (this.provisionalOriginal.trim() && this.activo) {
-      this.cierreFrase = window.setTimeout(() => this.cerrarFrase(), CIERRE_FRASE_MS);
-      return;
-    }
-    this.soltarPorDecir();
-    // No llegó más texto: el punto era real y la frase termina.
-    const punto = this.puntoPendiente;
-    this.puntoPendiente = false;
-    this.cadenaVoz = this.cadenaVoz.then(() => {
-      if (punto && this.abierto?.stream.state === "active") this.abierto.stream.sendText(".");
-      this.finTramo();
-    });
-  }
-
-  private finTramo(): void {
-    window.clearTimeout(this.cierreFrase);
-    const tramo = this.abierto;
-    this.abierto = null;
-    if (tramo && tramo.stream.state === "active") tramo.stream.finish();
   }
 
   private async abrirTramo(): Promise<Tramo> {
@@ -476,22 +424,24 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       reduce_silence: ajustes?.reducirSilencios ?? false,
       voice: ajustes?.voz || this.vozServidor,
     });
-    const tramo: Tramo = { id: this.siguienteTramo++, stream, pendiente: [], terminado: false, conAudio: false };
+    const tramo: Tramo = { id: this.siguienteTramo++, stream, pendiente: [], terminado: false, conAudio: false, enviado: performance.now() };
     this.tramos.push(tramo);
     stream.on("audio", (bytes) => {
       if (!tramo.conAudio) {
         tramo.conAudio = true;
         const t = performance.now();
-        const espera = tramo.primerTexto === undefined ? "" : ` (${Math.round(t - tramo.primerTexto)} ms después del primer texto)`;
-        this.emitir({ tipo: "diagnostico", nombre: `voz_primer_audio#${tramo.id}`, muestra: `en cola: ${(this.reproductor?.pendiente ?? 0).toFixed(1)} s${espera}`, t });
+        this.emitir({
+          tipo: "diagnostico",
+          nombre: `voz_primer_audio#${tramo.id}`,
+          muestra: `${Math.round(t - tramo.enviado)} ms después del texto; en cola: ${(this.reproductor?.pendiente ?? 0).toFixed(1)} s`,
+          t,
+        });
       }
       if (this.tramos[0] === tramo) this.sonar(bytes);
       else tramo.pendiente.push(bytes);
     });
     const terminar = () => {
-      if (!tramo.terminado) {
-        this.emitir({ tipo: "diagnostico", nombre: `voz_fin#${tramo.id}`, muestra: `en cola: ${(this.reproductor?.pendiente ?? 0).toFixed(1)} s`, t: performance.now() });
-      }
+      if (tramo.terminado) return;
       tramo.terminado = true;
       this.avanzar();
     };
@@ -529,9 +479,7 @@ export class ProveedorSoniox implements ProveedorTraduccion {
       if (tramo.stream.state === "active" || tramo.stream.state === "finishing") tramo.stream.cancel();
     }
     this.tramos = [];
-    this.abierto = null;
     this.porDecir = "";
-    this.puntoPendiente = false;
     this.emitir({ tipo: "diagnostico", nombre: "voz_descartada", muestra: `Más de ${DESCARTAR_DESDE_S} s de voz en cola`, t: performance.now() });
   }
 
